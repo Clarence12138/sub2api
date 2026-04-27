@@ -119,6 +119,8 @@ tests
 CLAUDE.md
 .claude
 scripts
+!scripts/
+!scripts/sync-upstream.sh
 .code-review-state
 #openspec/
 code-reviews/
