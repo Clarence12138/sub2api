@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -58,6 +60,7 @@ type AdminService interface {
 
 	// API Key management (admin)
 	AdminUpdateAPIKeyGroupID(ctx context.Context, keyID int64, groupID *int64) (*AdminUpdateAPIKeyGroupIDResult, error)
+	AdminResetAPIKeyRateLimitUsage(ctx context.Context, keyID int64) (*APIKey, error)
 
 	// ReplaceUserGroup 替换用户的专属分组：授予新分组权限、迁移 Key、移除旧分组权限
 	ReplaceUserGroup(ctx context.Context, userID, oldGroupID, newGroupID int64) (*ReplaceUserGroupResult, error)
@@ -291,6 +294,7 @@ type UpdateAccountInput struct {
 // BulkUpdateAccountsInput describes the payload for bulk updating accounts.
 type BulkUpdateAccountsInput struct {
 	AccountIDs     []int64
+	Filters        *BulkUpdateAccountFilters
 	Name           string
 	ProxyID        *int64
 	Concurrency    *int
@@ -305,6 +309,15 @@ type BulkUpdateAccountsInput struct {
 	// SkipMixedChannelCheck skips the mixed channel risk check when binding groups.
 	// This should only be set when the caller has explicitly confirmed the risk.
 	SkipMixedChannelCheck bool
+}
+
+type BulkUpdateAccountFilters struct {
+	Platform    string
+	Type        string
+	Status      string
+	Group       string
+	Search      string
+	PrivacyMode string
 }
 
 // BulkUpdateAccountResult captures the result for a single account update.
@@ -961,16 +974,213 @@ func (s *adminServiceImpl) GetUserUsageStats(ctx context.Context, userID int64, 
 // GetUserBalanceHistory returns paginated balance/concurrency change records for a user.
 func (s *adminServiceImpl) GetUserBalanceHistory(ctx context.Context, userID int64, page, pageSize int, codeType string) ([]RedeemCode, int64, float64, error) {
 	params := pagination.PaginationParams{Page: page, PageSize: pageSize}
+	if codeType == RedeemTypeAffiliateBalance {
+		codes, total, err := s.listAffiliateBalanceHistory(ctx, userID, params)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		totalRecharged, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		return codes, total, totalRecharged, nil
+	}
+
+	if codeType == "" {
+		return s.getAllUserBalanceHistory(ctx, userID, params)
+	}
+
 	codes, result, err := s.redeemCodeRepo.ListByUserPaginated(ctx, userID, params, codeType)
 	if err != nil {
 		return nil, 0, 0, err
 	}
+	total := result.Total
 	// Aggregate total recharged amount (only once, regardless of type filter)
 	totalRecharged, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	return codes, result.Total, totalRecharged, nil
+	return codes, total, totalRecharged, nil
+}
+
+func (s *adminServiceImpl) getAllUserBalanceHistory(ctx context.Context, userID int64, params pagination.PaginationParams) ([]RedeemCode, int64, float64, error) {
+	needed := params.Offset() + params.Limit()
+	if needed < params.Limit() {
+		needed = params.Limit()
+	}
+
+	redeemCodes, redeemTotal, err := s.listRedeemBalanceHistoryForMerge(ctx, userID, needed)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	affiliateCodes, affiliateTotal, err := s.listAffiliateBalanceHistoryForMerge(ctx, userID, needed)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	codes := mergeBalanceHistoryCodes(redeemCodes, affiliateCodes, params)
+
+	totalRecharged, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	return codes, redeemTotal + affiliateTotal, totalRecharged, nil
+}
+
+func (s *adminServiceImpl) listRedeemBalanceHistoryForMerge(ctx context.Context, userID int64, needed int) ([]RedeemCode, int64, error) {
+	if needed <= 0 {
+		return nil, 0, nil
+	}
+
+	var (
+		out   []RedeemCode
+		total int64
+	)
+	for page := 1; len(out) < needed; page++ {
+		params := pagination.PaginationParams{Page: page, PageSize: 1000}
+		codes, result, err := s.redeemCodeRepo.ListByUserPaginated(ctx, userID, params, "")
+		if err != nil {
+			return nil, 0, err
+		}
+		if result != nil {
+			total = result.Total
+		}
+		out = append(out, codes...)
+		if len(codes) < params.Limit() || int64(len(out)) >= total {
+			break
+		}
+	}
+	if len(out) > needed {
+		out = out[:needed]
+	}
+	return out, total, nil
+}
+
+func (s *adminServiceImpl) listAffiliateBalanceHistoryForMerge(ctx context.Context, userID int64, needed int) ([]RedeemCode, int64, error) {
+	if needed <= 0 {
+		return nil, 0, nil
+	}
+
+	var (
+		out   []RedeemCode
+		total int64
+	)
+	for page := 1; len(out) < needed; page++ {
+		params := pagination.PaginationParams{Page: page, PageSize: 1000}
+		codes, currentTotal, err := s.listAffiliateBalanceHistory(ctx, userID, params)
+		if err != nil {
+			return nil, 0, err
+		}
+		total = currentTotal
+		out = append(out, codes...)
+		if len(codes) < params.Limit() || int64(len(out)) >= total {
+			break
+		}
+	}
+	if len(out) > needed {
+		out = out[:needed]
+	}
+	return out, total, nil
+}
+
+func (s *adminServiceImpl) listAffiliateBalanceHistory(ctx context.Context, userID int64, params pagination.PaginationParams) ([]RedeemCode, int64, error) {
+	if s == nil || s.entClient == nil || userID <= 0 {
+		return nil, 0, nil
+	}
+
+	rows, err := s.entClient.QueryContext(ctx, `
+SELECT id,
+       amount::double precision,
+       created_at
+FROM user_affiliate_ledger
+WHERE user_id = $1
+  AND action = 'transfer'
+ORDER BY created_at DESC, id DESC
+OFFSET $2
+LIMIT $3`, userID, params.Offset(), params.Limit())
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	codes := make([]RedeemCode, 0, params.Limit())
+	for rows.Next() {
+		var id int64
+		var amount float64
+		var createdAt time.Time
+		if err := rows.Scan(&id, &amount, &createdAt); err != nil {
+			return nil, 0, err
+		}
+		usedBy := userID
+		usedAt := createdAt
+		codes = append(codes, RedeemCode{
+			ID:        -id,
+			Code:      fmt.Sprintf("AFF-%d", id),
+			Type:      RedeemTypeAffiliateBalance,
+			Value:     amount,
+			Status:    StatusUsed,
+			UsedBy:    &usedBy,
+			UsedAt:    &usedAt,
+			CreatedAt: createdAt,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	total, err := countAffiliateBalanceHistory(ctx, s.entClient, userID)
+	if err != nil {
+		return nil, 0, err
+	}
+	return codes, total, nil
+}
+
+func countAffiliateBalanceHistory(ctx context.Context, client *dbent.Client, userID int64) (int64, error) {
+	rows, err := client.QueryContext(ctx, `
+SELECT COUNT(*)
+FROM user_affiliate_ledger
+WHERE user_id = $1
+  AND action = 'transfer'`, userID)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var total sql.NullInt64
+	if rows.Next() {
+		if err := rows.Scan(&total); err != nil {
+			return 0, err
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	if !total.Valid {
+		return 0, nil
+	}
+	return total.Int64, nil
+}
+
+func mergeBalanceHistoryCodes(redeemCodes, affiliateCodes []RedeemCode, params pagination.PaginationParams) []RedeemCode {
+	combined := append(append([]RedeemCode{}, redeemCodes...), affiliateCodes...)
+	sort.SliceStable(combined, func(i, j int) bool {
+		return redeemCodeHistoryTime(combined[i]).After(redeemCodeHistoryTime(combined[j]))
+	})
+	offset := params.Offset()
+	if offset >= len(combined) {
+		return []RedeemCode{}
+	}
+	end := offset + params.Limit()
+	if end > len(combined) {
+		end = len(combined)
+	}
+	return combined[offset:end]
+}
+
+func redeemCodeHistoryTime(code RedeemCode) time.Time {
+	if code.UsedAt != nil {
+		return *code.UsedAt
+	}
+	return code.CreatedAt
 }
 
 func (s *adminServiceImpl) BindUserAuthIdentity(ctx context.Context, userID int64, input AdminBindAuthIdentityInput) (*AdminBoundAuthIdentity, error) {
@@ -1961,6 +2171,30 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 	return result, nil
 }
 
+// AdminResetAPIKeyRateLimitUsage resets all API key rate-limit usage windows.
+func (s *adminServiceImpl) AdminResetAPIKeyRateLimitUsage(ctx context.Context, keyID int64) (*APIKey, error) {
+	apiKey, err := s.apiKeyRepo.GetByID(ctx, keyID)
+	if err != nil {
+		return nil, err
+	}
+	apiKey.Usage5h = 0
+	apiKey.Usage1d = 0
+	apiKey.Usage7d = 0
+	apiKey.Window5hStart = nil
+	apiKey.Window1dStart = nil
+	apiKey.Window7dStart = nil
+	if err := s.apiKeyRepo.Update(ctx, apiKey); err != nil {
+		return nil, fmt.Errorf("reset api key rate limit usage: %w", err)
+	}
+	if s.authCacheInvalidator != nil {
+		s.authCacheInvalidator.InvalidateAuthCacheByKey(ctx, apiKey.Key)
+	}
+	if s.billingCacheService != nil {
+		_ = s.billingCacheService.InvalidateAPIKeyRateLimit(ctx, apiKey.ID)
+	}
+	return apiKey, nil
+}
+
 // ReplaceUserGroup 替换用户的专属分组
 func (s *adminServiceImpl) ReplaceUserGroup(ctx context.Context, userID, oldGroupID, newGroupID int64) (*ReplaceUserGroupResult, error) {
 	if oldGroupID == newGroupID {
@@ -2286,6 +2520,14 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 // BulkUpdateAccounts updates multiple accounts in one request.
 // It merges credentials/extra keys instead of overwriting the whole object.
 func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUpdateAccountsInput) (*BulkUpdateAccountsResult, error) {
+	if len(input.AccountIDs) == 0 && input.Filters != nil {
+		accountIDs, err := s.resolveBulkUpdateTargetIDs(ctx, input.Filters)
+		if err != nil {
+			return nil, err
+		}
+		input.AccountIDs = accountIDs
+	}
+
 	result := &BulkUpdateAccountsResult{
 		SuccessIDs: make([]int64, 0, len(input.AccountIDs)),
 		FailedIDs:  make([]int64, 0, len(input.AccountIDs)),
@@ -2399,6 +2641,55 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	}
 
 	return result, nil
+}
+
+func (s *adminServiceImpl) resolveBulkUpdateTargetIDs(ctx context.Context, filters *BulkUpdateAccountFilters) ([]int64, error) {
+	if filters == nil {
+		return nil, nil
+	}
+
+	groupID := int64(0)
+	switch strings.TrimSpace(filters.Group) {
+	case "":
+	case "ungrouped":
+		groupID = AccountListGroupUngrouped
+	default:
+		parsedGroupID, err := strconv.ParseInt(strings.TrimSpace(filters.Group), 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid group filter: %w", err)
+		}
+		groupID = parsedGroupID
+	}
+
+	const pageSize = 500
+	page := 1
+	accountIDs := make([]int64, 0, pageSize)
+
+	for {
+		accounts, total, err := s.ListAccounts(
+			ctx,
+			page,
+			pageSize,
+			filters.Platform,
+			filters.Type,
+			filters.Status,
+			filters.Search,
+			groupID,
+			filters.PrivacyMode,
+			"",
+			"",
+		)
+		if err != nil {
+			return nil, err
+		}
+		for _, account := range accounts {
+			accountIDs = append(accountIDs, account.ID)
+		}
+		if int64(len(accountIDs)) >= total || len(accounts) == 0 {
+			return accountIDs, nil
+		}
+		page++
+	}
 }
 
 func (s *adminServiceImpl) DeleteAccount(ctx context.Context, id int64) error {

@@ -38,6 +38,29 @@ var codexModelMap = map[string]string{
 	"gpt-5.2-medium":             "gpt-5.2",
 	"gpt-5.2-high":               "gpt-5.2",
 	"gpt-5.2-xhigh":              "gpt-5.2",
+	"gpt-5":                      "gpt-5.4",
+	"gpt-5-mini":                 "gpt-5.4",
+	"gpt-5-nano":                 "gpt-5.4",
+	"gpt-5.1":                    "gpt-5.4",
+	"gpt-5.1-codex":              "gpt-5.3-codex",
+	"gpt-5.1-codex-max":          "gpt-5.3-codex",
+	"gpt-5.1-codex-mini":         "gpt-5.3-codex",
+	"gpt-5.2-codex":              "gpt-5.2",
+	"codex-mini-latest":          "gpt-5.3-codex",
+	"gpt-5-codex":                "gpt-5.3-codex",
+}
+
+var codexVersionModelPrefixes = []struct {
+	prefix string
+	target string
+}{
+	{prefix: "gpt-5.3-codex-spark", target: "gpt-5.3-codex-spark"},
+	{prefix: "gpt-5.3-codex", target: "gpt-5.3-codex"},
+	{prefix: "gpt-5.4-mini", target: "gpt-5.4-mini"},
+	{prefix: "gpt-5.4-nano", target: "gpt-5.4-nano"},
+	{prefix: "gpt-5.5", target: "gpt-5.5"},
+	{prefix: "gpt-5.4", target: "gpt-5.4"},
+	{prefix: "gpt-5.2", target: "gpt-5.2"},
 }
 
 type codexTransformResult struct {
@@ -52,6 +75,23 @@ const (
 	codexSparkImageUnsupportedMarker = "<sub2api-codex-spark-image-unsupported>"
 	codexSparkImageUnsupportedText   = codexSparkImageUnsupportedMarker + "\nThe current model is gpt-5.3-codex-spark, which does not support image generation, image editing, image input, the `image_generation` tool, or Codex `image_gen`/`$imagegen` workflows. If the user asks for image generation or image editing, clearly explain this model limitation and ask them to switch to a non-Spark Codex model such as gpt-5.3-codex or gpt-5.4. Do not claim that the local environment merely lacks image_gen tooling, and do not suggest CLI fallback as the primary fix while the model remains Spark.\n</sub2api-codex-spark-image-unsupported>"
 )
+
+var openAIChatGPTInternalUnsupportedFields = []string{
+	"user",
+	"metadata",
+	"prompt_cache_retention",
+	"safety_identifier",
+	"stream_options",
+}
+
+var openAICodexOAuthUnsupportedFields = append([]string{
+	"max_output_tokens",
+	"max_completion_tokens",
+	"temperature",
+	"top_p",
+	"frequency_penalty",
+	"presence_penalty",
+}, openAIChatGPTInternalUnsupportedFields...)
 
 func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact bool) codexTransformResult {
 	result := codexTransformResult{}
@@ -93,23 +133,8 @@ func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact
 		}
 	}
 
-	// Strip parameters unsupported by codex models via the Responses API.
-	for _, key := range []string{
-		"max_output_tokens",
-		"max_completion_tokens",
-		"temperature",
-		"top_p",
-		"frequency_penalty",
-		"presence_penalty",
-		// prompt_cache_retention is a newer Responses API parameter (cache TTL).
-		// The ChatGPT internal Codex endpoint rejects it with
-		// "Unsupported parameter: prompt_cache_retention". Defense-in-depth
-		// for any OAuth path that reaches this transform — the Cursor
-		// Responses-shape short-circuit in ForwardAsChatCompletions strips
-		// it earlier too, but we keep this line so other OAuth callers are
-		// equally protected.
-		"prompt_cache_retention",
-	} {
+	// Strip parameters unsupported by ChatGPT internal Codex endpoint.
+	for _, key := range openAICodexOAuthUnsupportedFields {
 		if _, ok := reqBody[key]; ok {
 			delete(reqBody, key)
 			result.Modified = true
@@ -141,9 +166,7 @@ func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact
 			if name, ok := fcObj["name"].(string); ok && strings.TrimSpace(name) != "" {
 				reqBody["tool_choice"] = map[string]any{
 					"type": "function",
-					"function": map[string]any{
-						"name": name,
-					},
+					"name": name,
 				}
 			}
 		}
@@ -219,8 +242,37 @@ func normalizeCodexToolChoice(reqBody map[string]any) bool {
 		return false
 	}
 	choiceType := strings.TrimSpace(firstNonEmptyString(choiceMap["type"]))
-	if choiceType == "" || codexToolsContainType(reqBody["tools"], choiceType) {
+	if choiceType == "" {
 		return false
+	}
+	modified := false
+	if choiceType == "function" {
+		name := strings.TrimSpace(firstNonEmptyString(choiceMap["name"]))
+		if name == "" {
+			if function, ok := choiceMap["function"].(map[string]any); ok {
+				name = strings.TrimSpace(firstNonEmptyString(function["name"]))
+			}
+		}
+		if name == "" {
+			reqBody["tool_choice"] = "auto"
+			return true
+		}
+		if strings.TrimSpace(firstNonEmptyString(choiceMap["name"])) != name {
+			choiceMap["name"] = name
+			modified = true
+		}
+		if _, ok := choiceMap["function"]; ok {
+			delete(choiceMap, "function")
+			modified = true
+		}
+		if !codexToolsContainFunctionName(reqBody["tools"], name) {
+			reqBody["tool_choice"] = "auto"
+			return true
+		}
+		return modified
+	}
+	if codexToolsContainType(reqBody["tools"], choiceType) {
+		return modified
 	}
 	reqBody["tool_choice"] = "auto"
 	return true
@@ -237,6 +289,33 @@ func codexToolsContainType(rawTools any, toolType string) bool {
 			continue
 		}
 		if strings.TrimSpace(firstNonEmptyString(tool["type"])) == toolType {
+			return true
+		}
+	}
+	return false
+}
+
+func codexToolsContainFunctionName(rawTools any, name string) bool {
+	tools, ok := rawTools.([]any)
+	if !ok || strings.TrimSpace(name) == "" {
+		return false
+	}
+	normalizedName := strings.TrimSpace(name)
+	for _, rawTool := range tools {
+		tool, ok := rawTool.(map[string]any)
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(firstNonEmptyString(tool["type"])) != "function" {
+			continue
+		}
+		toolName := strings.TrimSpace(firstNonEmptyString(tool["name"]))
+		if toolName == "" {
+			if function, ok := tool["function"].(map[string]any); ok {
+				toolName = strings.TrimSpace(firstNonEmptyString(function["name"]))
+			}
+		}
+		if toolName == normalizedName {
 			return true
 		}
 	}
@@ -391,8 +470,19 @@ func normalizeCodexModel(model string) string {
 	if model == "" {
 		return "gpt-5.4"
 	}
+	if mapped, ok := normalizeKnownCodexModel(model); ok {
+		return mapped
+	}
+	return model
+}
+
+func normalizeKnownCodexModel(model string) (string, bool) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return "", false
+	}
 	if isOpenAIImageGenerationModel(model) {
-		return model
+		return model, true
 	}
 
 	modelID := model
@@ -401,41 +491,58 @@ func normalizeCodexModel(model string) string {
 		modelID = parts[len(parts)-1]
 	}
 
-	if mapped := getNormalizedCodexModel(modelID); mapped != "" {
-		return mapped
+	key := codexModelLookupKey(modelID)
+	if key == "" {
+		return "", false
 	}
+	if mapped := getNormalizedCodexModel(key); mapped != "" {
+		return mapped, true
+	}
+	for _, item := range codexVersionModelPrefixes {
+		if key == item.prefix {
+			return item.target, true
+		}
+		suffix, ok := strings.CutPrefix(key, item.prefix+"-")
+		if ok && isKnownCodexModelSuffix(suffix) {
+			return item.target, true
+		}
+	}
+	return "", false
+}
 
-	normalized := strings.ToLower(modelID)
+func codexModelLookupKey(modelID string) string {
+	modelID = strings.TrimSpace(modelID)
+	if modelID == "" {
+		return ""
+	}
+	if strings.Contains(modelID, "/") {
+		parts := strings.Split(modelID, "/")
+		modelID = parts[len(parts)-1]
+	}
+	return strings.ToLower(strings.Join(strings.Fields(modelID), "-"))
+}
 
-	if strings.Contains(normalized, "gpt-5.5") || strings.Contains(normalized, "gpt 5.5") {
-		return "gpt-5.5"
+func isKnownCodexModelSuffix(suffix string) bool {
+	switch suffix {
+	case "none", "minimal", "low", "medium", "high", "xhigh":
+		return true
 	}
-	if strings.Contains(normalized, "gpt-5.4-mini") || strings.Contains(normalized, "gpt 5.4 mini") {
-		return "gpt-5.4-mini"
-	}
-	if strings.Contains(normalized, "gpt-5.4") || strings.Contains(normalized, "gpt 5.4") {
-		return "gpt-5.4"
-	}
-	if strings.Contains(normalized, "gpt-5.2") || strings.Contains(normalized, "gpt 5.2") {
-		return "gpt-5.2"
-	}
-	if strings.Contains(normalized, "gpt-5.3-codex-spark") || strings.Contains(normalized, "gpt 5.3 codex spark") {
-		return "gpt-5.3-codex-spark"
-	}
-	if strings.Contains(normalized, "gpt-5.3-codex") || strings.Contains(normalized, "gpt 5.3 codex") {
-		return "gpt-5.3-codex"
-	}
-	if strings.Contains(normalized, "gpt-5.3") || strings.Contains(normalized, "gpt 5.3") {
-		return "gpt-5.3-codex"
-	}
-	if strings.Contains(normalized, "codex") {
-		return "gpt-5.3-codex"
-	}
-	if strings.Contains(normalized, "gpt-5") || strings.Contains(normalized, "gpt 5") {
-		return "gpt-5.4"
-	}
+	return isCodexDateSuffix(suffix)
+}
 
-	return "gpt-5.4"
+func isCodexDateSuffix(suffix string) bool {
+	parts := strings.Split(suffix, "-")
+	if len(parts) != 3 || len(parts[0]) != 4 || len(parts[1]) != 2 || len(parts[2]) != 2 {
+		return false
+	}
+	for _, part := range parts {
+		for _, r := range part {
+			if r < '0' || r > '9' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func isCodexSparkModel(model string) bool {
@@ -733,17 +840,12 @@ func SupportsVerbosity(model string) bool {
 }
 
 func getNormalizedCodexModel(modelID string) string {
-	if modelID == "" {
+	key := codexModelLookupKey(modelID)
+	if key == "" {
 		return ""
 	}
-	if mapped, ok := codexModelMap[modelID]; ok {
+	if mapped, ok := codexModelMap[key]; ok {
 		return mapped
-	}
-	lower := strings.ToLower(modelID)
-	for key, value := range codexModelMap {
-		if strings.ToLower(key) == lower {
-			return value
-		}
 	}
 	return ""
 }
@@ -852,6 +954,14 @@ func filterCodexInput(input []any, preserveReferences bool) []any {
 			continue
 		}
 		typ, _ := m["type"].(string)
+
+		// chatgpt.com codex backend (OAuth path) does not persist reasoning
+		// items because applyCodexOAuthTransform forces store=false. Any rs_*
+		// reference replayed in input is guaranteed to 404 upstream
+		// ("Item with id 'rs_...' not found"). Drop reasoning items entirely.
+		if typ == "reasoning" {
+			continue
+		}
 
 		// 仅修正真正的 tool/function call 标识，避免误改普通 message/reasoning id；
 		// 若 item_reference 指向 legacy call_* 标识，则仅修正该引用本身。

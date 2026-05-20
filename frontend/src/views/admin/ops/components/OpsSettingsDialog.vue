@@ -7,6 +7,7 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import type { OpsAlertRuntimeSettings, EmailNotificationConfig, AlertSeverity, OpsAdvancedSettings, OpsMetricThresholds } from '../types'
+import { collectOpsMetricThresholdErrors, normalizeOpsMetricThresholds } from '../metricThresholds'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -30,12 +31,7 @@ const emailConfig = ref<EmailNotificationConfig | null>(null)
 // 高级设置
 const advancedSettings = ref<OpsAdvancedSettings | null>(null)
 // 指标阈值配置
-const metricThresholds = ref<OpsMetricThresholds>({
-  sla_percent_min: 99.5,
-  ttft_p99_ms_max: 500,
-  request_error_rate_percent_max: 5,
-  upstream_error_rate_percent_max: 5
-})
+const metricThresholds = ref<OpsMetricThresholds>(normalizeOpsMetricThresholds())
 
 // 加载所有配置
 async function loadAllSettings() {
@@ -50,15 +46,7 @@ async function loadAllSettings() {
     runtimeSettings.value = runtime
     emailConfig.value = email
     advancedSettings.value = advanced
-    // 如果后端返回了阈值，使用后端的值；否则保持默认值
-    if (thresholds && Object.keys(thresholds).length > 0) {
-        metricThresholds.value = {
-          sla_percent_min: thresholds.sla_percent_min ?? 99.5,
-          ttft_p99_ms_max: thresholds.ttft_p99_ms_max ?? 500,
-          request_error_rate_percent_max: thresholds.request_error_rate_percent_max ?? 5,
-          upstream_error_rate_percent_max: thresholds.upstream_error_rate_percent_max ?? 5
-        }
-    }
+    metricThresholds.value = normalizeOpsMetricThresholds(thresholds)
   } catch (err: any) {
     console.error('[OpsSettingsDialog] Failed to load settings', err)
     appStore.showError(err?.response?.data?.detail || t('admin.ops.settings.loadFailed'))
@@ -136,30 +124,18 @@ const validation = computed(() => {
   // 验证高级设置
   if (advancedSettings.value) {
     const { error_log_retention_days, minute_metrics_retention_days, hourly_metrics_retention_days } = advancedSettings.value.data_retention
-    if (error_log_retention_days < 1 || error_log_retention_days > 365) {
+    if (error_log_retention_days < 0 || error_log_retention_days > 365) {
       errors.push(t('admin.ops.settings.validation.retentionDaysRange'))
     }
-    if (minute_metrics_retention_days < 1 || minute_metrics_retention_days > 365) {
+    if (minute_metrics_retention_days < 0 || minute_metrics_retention_days > 365) {
       errors.push(t('admin.ops.settings.validation.retentionDaysRange'))
     }
-    if (hourly_metrics_retention_days < 1 || hourly_metrics_retention_days > 365) {
+    if (hourly_metrics_retention_days < 0 || hourly_metrics_retention_days > 365) {
       errors.push(t('admin.ops.settings.validation.retentionDaysRange'))
     }
   }
 
-  // 验证指标阈值
-  if (metricThresholds.value.sla_percent_min != null && (metricThresholds.value.sla_percent_min < 0 || metricThresholds.value.sla_percent_min > 100)) {
-    errors.push(t('admin.ops.settings.validation.slaMinPercentRange'))
-  }
-  if (metricThresholds.value.ttft_p99_ms_max != null && metricThresholds.value.ttft_p99_ms_max < 0) {
-    errors.push(t('admin.ops.settings.validation.ttftP99MaxRange'))
-  }
-  if (metricThresholds.value.request_error_rate_percent_max != null && (metricThresholds.value.request_error_rate_percent_max < 0 || metricThresholds.value.request_error_rate_percent_max > 100)) {
-    errors.push(t('admin.ops.settings.validation.requestErrorRateMaxRange'))
-  }
-  if (metricThresholds.value.upstream_error_rate_percent_max != null && (metricThresholds.value.upstream_error_rate_percent_max < 0 || metricThresholds.value.upstream_error_rate_percent_max > 100)) {
-    errors.push(t('admin.ops.settings.validation.upstreamErrorRateMaxRange'))
-  }
+  errors.push(...collectOpsMetricThresholdErrors(metricThresholds.value, (key) => t(`admin.ops.settings.${key}`)))
 
   return { valid: errors.length === 0, errors }
 })
@@ -396,6 +372,61 @@ async function saveAllSettings() {
             />
             <p class="mt-1 text-xs text-gray-500">{{ t('admin.ops.settings.upstreamErrorRateMaxPercentHint') }}</p>
           </div>
+
+          <div class="border-t border-gray-200 pt-4 dark:border-dark-600 md:col-span-2">
+            <h5 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.ops.settings.healthScoreThresholds') }}</h5>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.ops.settings.healthScoreThresholdsHint') }}</p>
+          </div>
+
+          <div>
+            <label class="input-label">{{ t('admin.ops.settings.healthScoreErrorRateFullPercent') }}</label>
+            <input
+              v-model.number="metricThresholds.health_score_error_rate_full_percent"
+              type="number"
+              min="0"
+              max="100"
+              step="0.1"
+              class="input"
+            />
+            <p class="mt-1 text-xs text-gray-500">{{ t('admin.ops.settings.healthScoreErrorRateFullPercentHint') }}</p>
+          </div>
+
+          <div>
+            <label class="input-label">{{ t('admin.ops.settings.healthScoreErrorRateZeroPercent') }}</label>
+            <input
+              v-model.number="metricThresholds.health_score_error_rate_zero_percent"
+              type="number"
+              min="0"
+              max="100"
+              step="0.1"
+              class="input"
+            />
+            <p class="mt-1 text-xs text-gray-500">{{ t('admin.ops.settings.healthScoreErrorRateZeroPercentHint') }}</p>
+          </div>
+
+          <div>
+            <label class="input-label">{{ t('admin.ops.settings.healthScoreTTFTP99FullMs') }}</label>
+            <input
+              v-model.number="metricThresholds.health_score_ttft_p99_full_ms"
+              type="number"
+              min="0"
+              step="100"
+              class="input"
+            />
+            <p class="mt-1 text-xs text-gray-500">{{ t('admin.ops.settings.healthScoreTTFTP99FullMsHint') }}</p>
+          </div>
+
+          <div>
+            <label class="input-label">{{ t('admin.ops.settings.healthScoreTTFTP99ZeroMs') }}</label>
+            <input
+              v-model.number="metricThresholds.health_score_ttft_p99_zero_ms"
+              type="number"
+              min="0"
+              step="100"
+              class="input"
+            />
+            <p class="mt-1 text-xs text-gray-500">{{ t('admin.ops.settings.healthScoreTTFTP99ZeroMsHint') }}</p>
+          </div>
         </div>
       </div>
 
@@ -431,7 +462,7 @@ async function saveAllSettings() {
                 <input
                   v-model.number="advancedSettings.data_retention.error_log_retention_days"
                   type="number"
-                  min="1"
+                  min="0"
                   max="365"
                   class="input"
                 />
@@ -441,7 +472,7 @@ async function saveAllSettings() {
                 <input
                   v-model.number="advancedSettings.data_retention.minute_metrics_retention_days"
                   type="number"
-                  min="1"
+                  min="0"
                   max="365"
                   class="input"
                 />
@@ -451,7 +482,7 @@ async function saveAllSettings() {
                 <input
                   v-model.number="advancedSettings.data_retention.hourly_metrics_retention_days"
                   type="number"
-                  min="1"
+                  min="0"
                   max="365"
                   class="input"
                 />
