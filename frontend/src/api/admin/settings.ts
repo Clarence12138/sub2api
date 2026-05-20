@@ -22,7 +22,8 @@ export type AuthSourceType =
   | "oidc"
   | "wechat"
   | "github"
-  | "google";
+  | "google"
+  | "dingtalk";
 
 export interface AuthSourceDefaultsValue {
   balance: number;
@@ -64,6 +65,7 @@ const AUTH_SOURCE_TYPES: AuthSourceType[] = [
   "wechat",
   "github",
   "google",
+  "dingtalk",
 ];
 const AUTH_SOURCE_DEFAULT_BALANCE = 0;
 const AUTH_SOURCE_DEFAULT_CONCURRENCY = 5;
@@ -352,6 +354,11 @@ export interface SystemSettings {
   auth_source_default_wechat_subscriptions?: DefaultSubscriptionSetting[];
   auth_source_default_wechat_grant_on_signup?: boolean;
   auth_source_default_wechat_grant_on_first_bind?: boolean;
+  auth_source_default_dingtalk_balance?: number;
+  auth_source_default_dingtalk_concurrency?: number;
+  auth_source_default_dingtalk_subscriptions?: DefaultSubscriptionSetting[];
+  auth_source_default_dingtalk_grant_on_signup?: boolean;
+  auth_source_default_dingtalk_grant_on_first_bind?: boolean;
   auth_source_default_github_balance?: number;
   auth_source_default_github_concurrency?: number;
   auth_source_default_github_subscriptions?: DefaultSubscriptionSetting[];
@@ -395,6 +402,24 @@ export interface SystemSettings {
   linuxdo_connect_client_id: string;
   linuxdo_connect_client_secret_configured: boolean;
   linuxdo_connect_redirect_url: string;
+
+  // DingTalk Connect OAuth settings
+  dingtalk_connect_enabled: boolean;
+  dingtalk_connect_client_id: string;
+  dingtalk_connect_client_secret_configured: boolean;
+  dingtalk_connect_redirect_url: string;
+  dingtalk_connect_corp_restriction_policy: string;
+  dingtalk_connect_internal_corp_id: string;
+  dingtalk_connect_bypass_registration: boolean;
+  dingtalk_connect_sync_corp_email: boolean;
+  dingtalk_connect_sync_display_name: boolean;
+  dingtalk_connect_sync_dept: boolean;
+  dingtalk_connect_sync_corp_email_attr_key: string;
+  dingtalk_connect_sync_display_name_attr_key: string;
+  dingtalk_connect_sync_dept_attr_key: string;
+  dingtalk_connect_sync_corp_email_attr_name: string;
+  dingtalk_connect_sync_display_name_attr_name: string;
+  dingtalk_connect_sync_dept_attr_name: string;
 
   // WeChat Connect OAuth settings
   wechat_connect_enabled: boolean;
@@ -477,6 +502,9 @@ export interface SystemSettings {
   enable_metadata_passthrough: boolean;
   enable_cch_signing: boolean;
   enable_anthropic_cache_ttl_1h_injection: boolean;
+  rewrite_message_cache_control: boolean;
+  antigravity_user_agent_version: string;
+  openai_codex_user_agent: string;
   web_search_emulation_enabled?: boolean;
 
   // Payment configuration
@@ -501,6 +529,7 @@ export interface SystemSettings {
   payment_cancel_rate_limit_window: number;
   payment_cancel_rate_limit_unit: string;
   payment_cancel_rate_limit_window_mode: string;
+  payment_alipay_force_qrcode?: boolean;
   payment_visible_method_alipay_source?: string;
   payment_visible_method_wxpay_source?: string;
   payment_visible_method_alipay_enabled?: boolean;
@@ -569,6 +598,11 @@ export interface UpdateSettingsRequest {
   auth_source_default_wechat_subscriptions?: DefaultSubscriptionSetting[];
   auth_source_default_wechat_grant_on_signup?: boolean;
   auth_source_default_wechat_grant_on_first_bind?: boolean;
+  auth_source_default_dingtalk_balance?: number;
+  auth_source_default_dingtalk_concurrency?: number;
+  auth_source_default_dingtalk_subscriptions?: DefaultSubscriptionSetting[];
+  auth_source_default_dingtalk_grant_on_signup?: boolean;
+  auth_source_default_dingtalk_grant_on_first_bind?: boolean;
   auth_source_default_github_balance?: number;
   auth_source_default_github_concurrency?: number;
   auth_source_default_github_subscriptions?: DefaultSubscriptionSetting[];
@@ -607,6 +641,22 @@ export interface UpdateSettingsRequest {
   linuxdo_connect_client_id?: string;
   linuxdo_connect_client_secret?: string;
   linuxdo_connect_redirect_url?: string;
+  dingtalk_connect_enabled?: boolean;
+  dingtalk_connect_client_id?: string;
+  dingtalk_connect_client_secret?: string;
+  dingtalk_connect_redirect_url?: string;
+  dingtalk_connect_corp_restriction_policy?: string;
+  dingtalk_connect_internal_corp_id?: string;
+  dingtalk_connect_bypass_registration?: boolean;
+  dingtalk_connect_sync_corp_email?: boolean;
+  dingtalk_connect_sync_display_name?: boolean;
+  dingtalk_connect_sync_dept?: boolean;
+  dingtalk_connect_sync_corp_email_attr_key?: string;
+  dingtalk_connect_sync_display_name_attr_key?: string;
+  dingtalk_connect_sync_dept_attr_key?: string;
+  dingtalk_connect_sync_corp_email_attr_name?: string;
+  dingtalk_connect_sync_display_name_attr_name?: string;
+  dingtalk_connect_sync_dept_attr_name?: string;
   wechat_connect_enabled?: boolean;
   wechat_connect_app_id?: string;
   wechat_connect_app_secret?: string;
@@ -673,6 +723,9 @@ export interface UpdateSettingsRequest {
   enable_metadata_passthrough?: boolean;
   enable_cch_signing?: boolean;
   enable_anthropic_cache_ttl_1h_injection?: boolean;
+  rewrite_message_cache_control?: boolean;
+  antigravity_user_agent_version?: string;
+  openai_codex_user_agent?: string;
   // Payment configuration
   payment_enabled?: boolean;
   risk_control_enabled?: boolean;
@@ -695,6 +748,7 @@ export interface UpdateSettingsRequest {
   payment_cancel_rate_limit_window?: number;
   payment_cancel_rate_limit_unit?: string;
   payment_cancel_rate_limit_window_mode?: string;
+  payment_alipay_force_qrcode?: boolean;
   payment_visible_method_alipay_source?: string;
   payment_visible_method_wxpay_source?: string;
   payment_visible_method_alipay_enabled?: boolean;
@@ -795,6 +849,105 @@ export async function sendTestEmail(
 ): Promise<{ message: string }> {
   const { data } = await apiClient.post<{ message: string }>(
     "/admin/settings/send-test-email",
+    request,
+  );
+  return data;
+}
+
+// ==================== Email Template Settings ====================
+
+export interface EmailTemplateOption {
+  value: string;
+  label?: string;
+  description?: string;
+}
+
+export type EmailTemplateEventOption = string | EmailTemplateOption;
+
+export interface EmailTemplateSummary {
+  event: string;
+  locale: string;
+  subject: string;
+  is_custom?: boolean;
+  updated_at?: string;
+}
+
+export interface EmailTemplateListResponse {
+  events: EmailTemplateEventOption[];
+  locales: string[];
+  templates?: EmailTemplateSummary[];
+  placeholders?: string[];
+}
+
+export interface EmailTemplateDetail {
+  event: string;
+  locale: string;
+  subject: string;
+  html: string;
+  is_custom?: boolean;
+  updated_at?: string;
+  placeholders?: string[];
+}
+
+export interface UpdateEmailTemplateRequest {
+  subject: string;
+  html: string;
+}
+
+export interface PreviewEmailTemplateRequest extends UpdateEmailTemplateRequest {
+  event: string;
+  locale: string;
+}
+
+export interface EmailTemplatePreviewResponse {
+  subject: string;
+  html: string;
+}
+
+export async function getEmailTemplates(): Promise<EmailTemplateListResponse> {
+  const { data } = await apiClient.get<EmailTemplateListResponse>(
+    "/admin/settings/email-templates",
+  );
+  return data;
+}
+
+export async function getEmailTemplate(
+  event: string,
+  locale: string,
+): Promise<EmailTemplateDetail> {
+  const { data } = await apiClient.get<EmailTemplateDetail>(
+    `/admin/settings/email-templates/${encodeURIComponent(event)}/${encodeURIComponent(locale)}`,
+  );
+  return data;
+}
+
+export async function updateEmailTemplate(
+  event: string,
+  locale: string,
+  request: UpdateEmailTemplateRequest,
+): Promise<EmailTemplateDetail> {
+  const { data } = await apiClient.put<EmailTemplateDetail>(
+    `/admin/settings/email-templates/${encodeURIComponent(event)}/${encodeURIComponent(locale)}`,
+    request,
+  );
+  return data;
+}
+
+export async function restoreOfficialEmailTemplate(
+  event: string,
+  locale: string,
+): Promise<EmailTemplateDetail> {
+  const { data } = await apiClient.post<EmailTemplateDetail>(
+    `/admin/settings/email-templates/${encodeURIComponent(event)}/${encodeURIComponent(locale)}/restore-official`,
+  );
+  return data;
+}
+
+export async function previewEmailTemplate(
+  request: PreviewEmailTemplateRequest,
+): Promise<EmailTemplatePreviewResponse> {
+  const { data } = await apiClient.post<EmailTemplatePreviewResponse>(
+    "/admin/settings/email-template-preview",
     request,
   );
   return data;
@@ -1106,6 +1259,11 @@ export const settingsAPI = {
   updateSettings,
   testSmtpConnection,
   sendTestEmail,
+  getEmailTemplates,
+  getEmailTemplate,
+  updateEmailTemplate,
+  restoreOfficialEmailTemplate,
+  previewEmailTemplate,
   getAdminApiKey,
   regenerateAdminApiKey,
   deleteAdminApiKey,
