@@ -41,13 +41,20 @@ const (
 	opsErrInsufficientQuota          = "insufficient_quota"
 
 	// 上游错误码常量 — 错误分类 (normalizeOpsErrorType / classifyOpsPhase / classifyOpsIsBusinessLimited)
-	opsCodeInsufficientBalance  = "INSUFFICIENT_BALANCE"
-	opsCodeUsageLimitExceeded   = "USAGE_LIMIT_EXCEEDED"
-	opsCodeSubscriptionNotFound = "SUBSCRIPTION_NOT_FOUND"
-	opsCodeSubscriptionInvalid  = "SUBSCRIPTION_INVALID"
-	opsCodeUserInactive         = "USER_INACTIVE"
-	opsCodeInvalidAPIKey        = "INVALID_API_KEY"
-	opsCodeAPIKeyRequired       = "API_KEY_REQUIRED"
+	opsCodeInsufficientBalance   = "INSUFFICIENT_BALANCE"
+	opsCodeUsageLimitExceeded    = "USAGE_LIMIT_EXCEEDED"
+	opsCodeSubscriptionNotFound  = "SUBSCRIPTION_NOT_FOUND"
+	opsCodeSubscriptionInvalid   = "SUBSCRIPTION_INVALID"
+	opsCodeUserInactive          = "USER_INACTIVE"
+	opsCodeInvalidAPIKey         = "INVALID_API_KEY"
+	opsCodeAPIKeyRequired        = "API_KEY_REQUIRED"
+	opsCodeAPIKeyExpired         = "API_KEY_EXPIRED"
+	opsCodeAPIKeyDisabled        = "API_KEY_DISABLED"
+	opsCodeUserNotFound          = "USER_NOT_FOUND"
+	opsCodeAPIKeyQuotaExhausted  = "API_KEY_QUOTA_EXHAUSTED"
+	opsCodeAPIKeyQueryDeprecated = "api_key_in_query_deprecated"
+	opsCodeGroupDeleted          = "GROUP_DELETED"
+	opsCodeGroupDisabled         = "GROUP_DISABLED"
 )
 
 const (
@@ -1007,6 +1014,8 @@ func parseOpsErrorResponse(body []byte) parsedOpsError {
 		var code string
 		if v, ok := errObj["code"]; ok {
 			switch n := v.(type) {
+			case string:
+				code = strings.TrimSpace(n)
 			case float64:
 				code = strconvItoa(int(n))
 			case int:
@@ -1089,8 +1098,7 @@ func classifyOpsPhase(errType, message, code string) string {
 	if isOpsClientAuthError(code, msg) {
 		return "auth"
 	}
-	switch strings.TrimSpace(code) {
-	case opsCodeInsufficientBalance, opsCodeUsageLimitExceeded, opsCodeSubscriptionNotFound, opsCodeSubscriptionInvalid:
+	if isOpsLocalBusinessLimitError(code, msg) {
 		return "request"
 	}
 
@@ -1149,8 +1157,10 @@ func classifyOpsErrorLog(c *gin.Context, errType, message, code string, status i
 	if routingCapacityLimited {
 		phase = "routing"
 	}
-	localClientAuthError := !upstreamError && phase == "auth" && isOpsClientAuthError(code, strings.ToLower(message))
-	isBusinessLimited = routingCapacityLimited || clientBusinessLimited || classifyOpsIsBusinessLimited(errType, phase, code, status, message, localClientAuthError)
+	msg := strings.ToLower(message)
+	localClientAuthError := !upstreamError && phase == "auth" && isOpsClientAuthError(code, msg)
+	localBusinessLimited := !upstreamError && classifyOpsIsBusinessLimited(errType, phase, code, status, message, localClientAuthError)
+	isBusinessLimited = routingCapacityLimited || (clientBusinessLimited && !upstreamError) || localBusinessLimited
 	errorOwner = classifyOpsErrorOwner(phase, message)
 	errorSource = classifyOpsErrorSource(phase, message)
 	return phase, isBusinessLimited, errorOwner, errorSource
@@ -1160,8 +1170,7 @@ func classifyOpsIsBusinessLimited(errType, phase, code string, status int, messa
 	if len(localClientAuthError) > 0 && localClientAuthError[0] {
 		return true
 	}
-	switch strings.TrimSpace(code) {
-	case opsCodeInsufficientBalance, opsCodeUsageLimitExceeded, opsCodeSubscriptionNotFound, opsCodeSubscriptionInvalid, opsCodeUserInactive:
+	if isOpsLocalBusinessLimitError(code, strings.ToLower(message)) {
 		return true
 	}
 	if phase == "billing" || phase == "concurrency" {
@@ -1178,10 +1187,66 @@ func classifyOpsIsBusinessLimited(errType, phase, code string, status int, messa
 
 func isOpsClientAuthError(code string, msg string) bool {
 	switch strings.TrimSpace(code) {
-	case opsCodeInvalidAPIKey, opsCodeAPIKeyRequired:
+	case opsCodeInvalidAPIKey,
+		opsCodeAPIKeyRequired,
+		opsCodeAPIKeyExpired,
+		opsCodeAPIKeyDisabled,
+		opsCodeUserNotFound,
+		opsCodeUserInactive,
+		opsCodeGroupDeleted,
+		opsCodeGroupDisabled:
 		return true
 	}
-	return strings.Contains(msg, "invalid api key") || strings.Contains(msg, "api key is required")
+	return strings.Contains(msg, "invalid api key") ||
+		strings.Contains(msg, "api key is required") ||
+		strings.Contains(msg, "api key is disabled") ||
+		strings.Contains(msg, "user associated with api key not found") ||
+		strings.Contains(msg, "user account is not active") ||
+		strings.Contains(msg, "api key 所属分组已删除") ||
+		strings.Contains(msg, "api key 所属分组已停用") ||
+		strings.Contains(msg, "api key is not assigned to any group")
+}
+
+func isOpsLocalBusinessLimitError(code string, msg string) bool {
+	switch strings.TrimSpace(code) {
+	case opsCodeInsufficientBalance,
+		opsCodeUsageLimitExceeded,
+		opsCodeSubscriptionNotFound,
+		opsCodeSubscriptionInvalid,
+		opsCodeAPIKeyQuotaExhausted,
+		opsCodeAPIKeyQueryDeprecated:
+		return true
+	}
+	return strings.Contains(msg, "api key in query parameter is deprecated") ||
+		strings.Contains(msg, "query parameter api_key is deprecated") ||
+		strings.Contains(msg, "no active subscription found for this group") ||
+		strings.Contains(msg, "subscription is invalid or expired") ||
+		strings.Contains(msg, opsErrInsufficientBalance) ||
+		strings.Contains(msg, "insufficient account balance") ||
+		strings.Contains(msg, "api key group platform is not gemini") ||
+		strings.Contains(msg, "api key 额度已用完") ||
+		strings.Contains(msg, "api key 5小时限额已用完") ||
+		strings.Contains(msg, "api key 日限额已用完") ||
+		strings.Contains(msg, "api key 7天限额已用完") ||
+		strings.Contains(msg, "daily usage limit exceeded") ||
+		strings.Contains(msg, "weekly usage limit exceeded") ||
+		strings.Contains(msg, "monthly usage limit exceeded") ||
+		strings.Contains(msg, "usage quota exhausted for this platform") ||
+		strings.Contains(msg, "requests-per-minute limit exceeded") ||
+		strings.Contains(msg, "too many pending requests") ||
+		strings.Contains(msg, "concurrency limit exceeded") ||
+		strings.Contains(msg, "image generation concurrency limit exceeded") ||
+		strings.Contains(msg, "this group is restricted to claude code clients") ||
+		strings.Contains(msg, "this group does not allow /v1/messages dispatch") ||
+		strings.Contains(msg, "image generation is not enabled for this group") ||
+		strings.Contains(msg, "token counting is not supported for this platform") ||
+		strings.Contains(msg, "images api is not supported for this platform") ||
+		(strings.Contains(msg, "model ") && strings.Contains(msg, " not in whitelist")) ||
+		(strings.Contains(msg, "beta feature ") && strings.Contains(msg, " is not allowed")) ||
+		(strings.Contains(msg, "openai service_tier=") && strings.Contains(msg, " is not allowed for model")) ||
+		strings.Contains(msg, "this account only allows codex official clients") ||
+		strings.Contains(msg, "openai wsv1 is temporarily unsupported") ||
+		strings.Contains(msg, "openai codex passthrough requires a non-empty instructions field")
 }
 
 func hasOpsUpstreamErrorContext(c *gin.Context) bool {
