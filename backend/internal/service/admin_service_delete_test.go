@@ -325,6 +325,12 @@ func (s *proxyRepoStub) ListAccountSummariesByProxyID(ctx context.Context, proxy
 type redeemRepoStub struct {
 	deleteErrByID map[int64]error
 	deletedIDs    []int64
+
+	batchUpdateIDs    []int64
+	batchUpdateFields RedeemCodeBatchUpdateFields
+	batchUpdateResult int64
+	batchUpdateErr    error
+	batchUpdateCalled bool
 }
 
 func (s *redeemRepoStub) Create(ctx context.Context, code *RedeemCode) error {
@@ -345,6 +351,19 @@ func (s *redeemRepoStub) GetByCode(ctx context.Context, code string) (*RedeemCod
 
 func (s *redeemRepoStub) Update(ctx context.Context, code *RedeemCode) error {
 	panic("unexpected Update call")
+}
+
+func (s *redeemRepoStub) BatchUpdate(ctx context.Context, ids []int64, fields RedeemCodeBatchUpdateFields) (int64, error) {
+	s.batchUpdateCalled = true
+	s.batchUpdateIDs = append([]int64(nil), ids...)
+	s.batchUpdateFields = fields
+	if s.batchUpdateErr != nil {
+		return 0, s.batchUpdateErr
+	}
+	if s.batchUpdateResult != 0 {
+		return s.batchUpdateResult, nil
+	}
+	return int64(len(ids)), nil
 }
 
 func (s *redeemRepoStub) Delete(ctx context.Context, id int64) error {
@@ -438,6 +457,22 @@ func (s *billingCacheStub) UpdateAPIKeyRateLimitUsage(ctx context.Context, keyID
 }
 func (s *billingCacheStub) InvalidateAPIKeyRateLimit(ctx context.Context, keyID int64) error {
 	panic("unexpected InvalidateAPIKeyRateLimit call")
+}
+
+func (s *billingCacheStub) GetUserPlatformQuotaCache(ctx context.Context, userID int64, platform string) (*UserPlatformQuotaCacheEntry, bool, error) {
+	panic("unexpected GetUserPlatformQuotaCache call")
+}
+
+func (s *billingCacheStub) SetUserPlatformQuotaCache(ctx context.Context, userID int64, platform string, entry *UserPlatformQuotaCacheEntry, ttl time.Duration) error {
+	panic("unexpected SetUserPlatformQuotaCache call")
+}
+
+func (s *billingCacheStub) DeleteUserPlatformQuotaCache(ctx context.Context, userID int64, platform string) error {
+	panic("unexpected DeleteUserPlatformQuotaCache call")
+}
+
+func (s *billingCacheStub) IncrUserPlatformQuotaUsageCache(ctx context.Context, userID int64, platform string, cost float64, ttl time.Duration) error {
+	panic("unexpected IncrUserPlatformQuotaUsageCache call")
 }
 
 func waitForInvalidations(t *testing.T, ch <-chan subscriptionInvalidateCall, expected int) []subscriptionInvalidateCall {
