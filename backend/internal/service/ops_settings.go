@@ -531,14 +531,14 @@ func defaultOpsMetricThresholds() *OpsMetricThresholds {
 	healthTTFTFull := 1000.0
 	healthTTFTZero := 3000.0
 	return &OpsMetricThresholds{
-		SLAPercentMin:                     &slaMin,
-		TTFTp99MsMax:                      &ttftMax,
-		RequestErrorRatePercentMax:        &reqErrMax,
-		UpstreamErrorRatePercentMax:       &upstreamErrMax,
-		HealthScoreErrorRateFullPercent:   &healthErrFull,
-		HealthScoreErrorRateZeroPercent:   &healthErrZero,
-		HealthScoreTTFTP99FullMs:          &healthTTFTFull,
-		HealthScoreTTFTP99ZeroMs:          &healthTTFTZero,
+		SLAPercentMin:                   &slaMin,
+		TTFTp99MsMax:                    &ttftMax,
+		RequestErrorRatePercentMax:      &reqErrMax,
+		UpstreamErrorRatePercentMax:     &upstreamErrMax,
+		HealthScoreErrorRateFullPercent: &healthErrFull,
+		HealthScoreErrorRateZeroPercent: &healthErrZero,
+		HealthScoreTTFTP99FullMs:        &healthTTFTFull,
+		HealthScoreTTFTP99ZeroMs:        &healthTTFTZero,
 	}
 }
 
