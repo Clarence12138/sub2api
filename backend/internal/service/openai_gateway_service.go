@@ -5657,7 +5657,20 @@ type OpenAIRecordUsageInput struct {
 	IPAddress          string // 请求的客户端 IP 地址
 	RequestPayloadHash string
 	APIKeyService      APIKeyQuotaUpdater
+	// PreferResultRequestID makes Result.RequestID the idempotency key when it is
+	// present. WebSocket sessions reuse the connection-level client/request IDs
+	// across turns, so each completed turn must use its upstream response ID.
+	PreferResultRequestID bool
 	ChannelUsageFields
+}
+
+func resolveOpenAIUsageBillingRequestID(ctx context.Context, upstreamRequestID string, preferResultRequestID bool) string {
+	if preferResultRequestID {
+		if requestID := strings.TrimSpace(upstreamRequestID); requestID != "" {
+			return requestID
+		}
+	}
+	return resolveUsageBillingRequestID(ctx, upstreamRequestID)
 }
 
 // RecordUsage records usage and deducts balance
@@ -5760,7 +5773,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	// Create usage log
 	durationMs := int(result.Duration.Milliseconds())
 	accountRateMultiplier := account.BillingRateMultiplier()
-	requestID := resolveUsageBillingRequestID(ctx, result.RequestID)
+	requestID := resolveOpenAIUsageBillingRequestID(ctx, result.RequestID, input.PreferResultRequestID)
 
 	// 确定 RequestedModel（渠道映射前的原始模型）
 	requestedModel := result.Model
