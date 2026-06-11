@@ -521,11 +521,19 @@ func defaultOpsMetricThresholds() *OpsMetricThresholds {
 	ttftMax := 500.0
 	reqErrMax := 5.0
 	upstreamErrMax := 5.0
+	healthErrFull := 1.0
+	healthErrZero := 10.0
+	healthTTFTFull := 1000.0
+	healthTTFTZero := 3000.0
 	return &OpsMetricThresholds{
-		SLAPercentMin:               &slaMin,
-		TTFTp99MsMax:                &ttftMax,
-		RequestErrorRatePercentMax:  &reqErrMax,
-		UpstreamErrorRatePercentMax: &upstreamErrMax,
+		SLAPercentMin:                   &slaMin,
+		TTFTp99MsMax:                    &ttftMax,
+		RequestErrorRatePercentMax:      &reqErrMax,
+		UpstreamErrorRatePercentMax:     &upstreamErrMax,
+		HealthScoreErrorRateFullPercent: &healthErrFull,
+		HealthScoreErrorRateZeroPercent: &healthErrZero,
+		HealthScoreTTFTP99FullMs:        &healthTTFTFull,
+		HealthScoreTTFTP99ZeroMs:        &healthTTFTZero,
 	}
 }
 
@@ -580,6 +588,37 @@ func (s *OpsService) UpdateMetricThresholds(ctx context.Context, cfg *OpsMetricT
 	}
 	if cfg.UpstreamErrorRatePercentMax != nil && (*cfg.UpstreamErrorRatePercentMax < 0 || *cfg.UpstreamErrorRatePercentMax > 100) {
 		return nil, errors.New("upstream_error_rate_percent_max must be between 0 and 100")
+	}
+	if cfg.HealthScoreErrorRateFullPercent != nil && (*cfg.HealthScoreErrorRateFullPercent < 0 || *cfg.HealthScoreErrorRateFullPercent > 100) {
+		return nil, errors.New("health_score_error_rate_full_percent must be between 0 and 100")
+	}
+	if cfg.HealthScoreErrorRateZeroPercent != nil && (*cfg.HealthScoreErrorRateZeroPercent < 0 || *cfg.HealthScoreErrorRateZeroPercent > 100) {
+		return nil, errors.New("health_score_error_rate_zero_percent must be between 0 and 100")
+	}
+	if cfg.HealthScoreTTFTP99FullMs != nil && *cfg.HealthScoreTTFTP99FullMs < 0 {
+		return nil, errors.New("health_score_ttft_p99_full_ms must be >= 0")
+	}
+	if cfg.HealthScoreTTFTP99ZeroMs != nil && *cfg.HealthScoreTTFTP99ZeroMs < 0 {
+		return nil, errors.New("health_score_ttft_p99_zero_ms must be >= 0")
+	}
+	defaults := defaultOpsMetricThresholds()
+	errFull := metricThresholdValue(cfg, defaults, func(v *OpsMetricThresholds) *float64 {
+		return v.HealthScoreErrorRateFullPercent
+	})
+	errZero := metricThresholdValue(cfg, defaults, func(v *OpsMetricThresholds) *float64 {
+		return v.HealthScoreErrorRateZeroPercent
+	})
+	if errFull >= errZero {
+		return nil, errors.New("health_score_error_rate_full_percent must be less than health_score_error_rate_zero_percent")
+	}
+	ttftFull := metricThresholdValue(cfg, defaults, func(v *OpsMetricThresholds) *float64 {
+		return v.HealthScoreTTFTP99FullMs
+	})
+	ttftZero := metricThresholdValue(cfg, defaults, func(v *OpsMetricThresholds) *float64 {
+		return v.HealthScoreTTFTP99ZeroMs
+	})
+	if ttftFull >= ttftZero {
+		return nil, errors.New("health_score_ttft_p99_full_ms must be less than health_score_ttft_p99_zero_ms")
 	}
 
 	raw, err := json.Marshal(cfg)

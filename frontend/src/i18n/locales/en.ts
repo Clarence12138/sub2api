@@ -5198,6 +5198,16 @@ export default {
         showAdvancedDeveloperSettings: 'Show advanced developer settings (Distributed Lock)',
         advancedSettingsSummary: 'Advanced settings (Distributed Lock)',
         evalIntervalHint: 'How often the evaluator runs. Keeping the default is recommended.',
+        metricThresholds: 'Metric Thresholds',
+        metricThresholdsHint: 'Used by alert evaluation and dashboard status hints.',
+        slaMinPercent: 'SLA Minimum (%)',
+        slaMinPercentHint: 'Status becomes abnormal when SLA is below this value (default: 99.5%)',
+        ttftP99MaxMs: 'TTFT P99 Maximum (ms)',
+        ttftP99MaxMsHint: 'Status becomes abnormal when TTFT P99 is above this value (default: 500ms)',
+        requestErrorRateMaxPercent: 'Request Error Rate Maximum (%)',
+        requestErrorRateMaxPercentHint: 'Status becomes abnormal when request error rate is above this value (default: 5%)',
+        upstreamErrorRateMaxPercent: 'Upstream Error Rate Maximum (%)',
+        upstreamErrorRateMaxPercentHint: 'Status becomes abnormal when upstream error rate is above this value (default: 5%)',
         validation: {
           title: 'Please fix the following issues',
           invalid: 'Invalid settings',
@@ -5209,7 +5219,11 @@ export default {
           slaMinPercentRange: 'SLA minimum percentage must be between 0 and 100',
           ttftP99MaxRange: 'TTFT P99 maximum must be a number ≥ 0',
           requestErrorRateMaxRange: 'Request error rate maximum must be between 0 and 100',
-          upstreamErrorRateMaxRange: 'Upstream error rate maximum must be between 0 and 100'
+          upstreamErrorRateMaxRange: 'Upstream error rate maximum must be between 0 and 100',
+          healthScoreErrorRateRange: 'Health score error-rate thresholds must be between 0 and 100',
+          healthScoreTTFTRange: 'Health score TTFT thresholds must be a number ≥ 0',
+          healthScoreErrorRateOrder: 'Health score error-rate full-score point must be lower than the zero-score point',
+          healthScoreTTFTOrder: 'Health score TTFT full-score point must be lower than the zero-score point'
         }
       },
       email: {
@@ -5280,6 +5294,16 @@ export default {
         requestErrorRateMaxPercentHint: 'Request error rate above this value will be displayed in red (default: 5%)',
         upstreamErrorRateMaxPercent: 'Upstream Error Rate Maximum (%)',
         upstreamErrorRateMaxPercentHint: 'Upstream error rate above this value will be displayed in red (default: 5%)',
+        healthScoreThresholds: 'Health Score Thresholds',
+        healthScoreThresholdsHint: 'Used to calculate the top health score. Alert rules are unaffected.',
+        healthScoreErrorRateFullPercent: 'Error rate full-score point (%)',
+        healthScoreErrorRateFullPercentHint: 'Business health error-rate component is full score at or below this value (default: 1%)',
+        healthScoreErrorRateZeroPercent: 'Error rate zero-score point (%)',
+        healthScoreErrorRateZeroPercentHint: 'Business health error-rate component is zero at or above this value (default: 10%)',
+        healthScoreTTFTP99FullMs: 'TTFT P99 full-score point (ms)',
+        healthScoreTTFTP99FullMsHint: 'Latency component is full score when TTFT P99 is at or below this value (default: 1000ms)',
+        healthScoreTTFTP99ZeroMs: 'TTFT P99 zero-score point (ms)',
+        healthScoreTTFTP99ZeroMsHint: 'Latency component is zero when TTFT P99 is at or above this value (default: 3000ms)',
         advancedSettings: 'Advanced Settings',
         dataRetention: 'Data Retention Policy',
         enableCleanup: 'Enable Data Cleanup',
@@ -5328,6 +5352,10 @@ export default {
           ttftP99MaxRange: 'TTFT P99 maximum must be a number ≥ 0',
           requestErrorRateMaxRange: 'Request error rate maximum must be between 0 and 100',
           upstreamErrorRateMaxRange: 'Upstream error rate maximum must be between 0 and 100',
+          healthScoreErrorRateRange: 'Health score error-rate thresholds must be between 0 and 100',
+          healthScoreTTFTRange: 'Health score TTFT thresholds must be a number ≥ 0',
+          healthScoreErrorRateOrder: 'Health score error-rate full-score point must be lower than the zero-score point',
+          healthScoreTTFTOrder: 'Health score TTFT full-score point must be lower than the zero-score point',
           openaiQuotaAutoPauseRange: 'OpenAI quota auto-pause threshold must be between 0 and 100'
         }
       },

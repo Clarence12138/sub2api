@@ -5357,6 +5357,16 @@ export default {
         showAdvancedDeveloperSettings: '显示高级开发者设置 (Distributed Lock)',
         advancedSettingsSummary: '高级设置 (分布式锁)',
         evalIntervalHint: '检测任务的执行频率，建议保持默认。',
+        metricThresholds: '指标阈值',
+        metricThresholdsHint: '用于告警评估和仪表盘状态提示。',
+        slaMinPercent: 'SLA 最低值（%）',
+        slaMinPercentHint: 'SLA 低于此值时显示为异常（默认：99.5%）',
+        ttftP99MaxMs: 'TTFT P99 最大值（毫秒）',
+        ttftP99MaxMsHint: 'TTFT P99 高于此值时显示为异常（默认：500ms）',
+        requestErrorRateMaxPercent: '请求错误率最大值（%）',
+        requestErrorRateMaxPercentHint: '请求错误率高于此值时显示为异常（默认：5%）',
+        upstreamErrorRateMaxPercent: '上游错误率最大值（%）',
+        upstreamErrorRateMaxPercentHint: '上游错误率高于此值时显示为异常（默认：5%）',
         validation: {
           title: '请先修正以下问题',
           invalid: '设置不合法',
@@ -5368,7 +5378,11 @@ export default {
           slaMinPercentRange: 'SLA 最低值必须在 0-100 之间',
           ttftP99MaxRange: 'TTFT P99 最大值必须大于或等于 0',
           requestErrorRateMaxRange: '请求错误率最大值必须在 0-100 之间',
-          upstreamErrorRateMaxRange: '上游错误率最大值必须在 0-100 之间'
+          upstreamErrorRateMaxRange: '上游错误率最大值必须在 0-100 之间',
+          healthScoreErrorRateRange: '健康评分错误率阈值必须在 0-100 之间',
+          healthScoreTTFTRange: '健康评分 TTFT 阈值必须大于或等于 0',
+          healthScoreErrorRateOrder: '健康评分错误率满分点必须小于零分点',
+          healthScoreTTFTOrder: '健康评分 TTFT 满分点必须小于零分点'
         }
       },
       email: {
@@ -5439,6 +5453,16 @@ export default {
         requestErrorRateMaxPercentHint: '请求错误率高于此值时显示为红色（默认：5%）',
         upstreamErrorRateMaxPercent: '上游错误率最大值（%）',
         upstreamErrorRateMaxPercentHint: '上游错误率高于此值时显示为红色（默认：5%）',
+        healthScoreThresholds: '健康评分阈值',
+        healthScoreThresholdsHint: '用于计算顶部健康评分，不影响告警规则。',
+        healthScoreErrorRateFullPercent: '错误率满分点（%）',
+        healthScoreErrorRateFullPercentHint: '错误率低于或等于此值时业务健康错误率部分为满分（默认：1%）',
+        healthScoreErrorRateZeroPercent: '错误率零分点（%）',
+        healthScoreErrorRateZeroPercentHint: '错误率高于或等于此值时业务健康错误率部分为 0 分（默认：10%）',
+        healthScoreTTFTP99FullMs: 'TTFT P99 满分点（毫秒）',
+        healthScoreTTFTP99FullMsHint: 'TTFT P99 低于或等于此值时延迟部分为满分（默认：1000ms）',
+        healthScoreTTFTP99ZeroMs: 'TTFT P99 零分点（毫秒）',
+        healthScoreTTFTP99ZeroMsHint: 'TTFT P99 高于或等于此值时延迟部分为 0 分（默认：3000ms）',
         advancedSettings: '高级设置',
         dataRetention: '数据保留策略',
         enableCleanup: '启用数据清理',
@@ -5488,6 +5512,10 @@ export default {
           ttftP99MaxRange: 'TTFT P99最大值必须大于等于0',
           requestErrorRateMaxRange: '请求错误率最大值必须在0-100之间',
           upstreamErrorRateMaxRange: '上游错误率最大值必须在0-100之间',
+          healthScoreErrorRateRange: '健康评分错误率阈值必须在 0-100 之间',
+          healthScoreTTFTRange: '健康评分 TTFT 阈值必须大于或等于 0',
+          healthScoreErrorRateOrder: '健康评分错误率满分点必须小于零分点',
+          healthScoreTTFTOrder: '健康评分 TTFT 满分点必须小于零分点',
           openaiQuotaAutoPauseRange: 'OpenAI 配额自动暂停阈值必须在 0-100 之间'
         }
       },

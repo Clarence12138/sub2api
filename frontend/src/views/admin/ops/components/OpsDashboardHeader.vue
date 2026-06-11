@@ -542,10 +542,11 @@ const diagnosisReport = computed<DiagnosisItem[]>(() => {
     }
   }
 
-  const ttftP99 = ov.ttft?.p99_ms ?? 0
-  if (ttftP99 > 500) {
+  const ttftP99 = ov.ttft?.p99_ms ?? null
+  const ttftLevel = getTTFTThresholdLevel(ttftP99)
+  if (ttftP99 != null && ttftLevel !== 'normal') {
     report.push({
-      type: 'warning',
+      type: ttftLevel,
       message: t('admin.ops.diagnosis.ttftHigh', { ttft: ttftP99.toFixed(0) }),
       impact: t('admin.ops.diagnosis.ttftHighImpact'),
       action: t('admin.ops.diagnosis.ttftHighAction')
