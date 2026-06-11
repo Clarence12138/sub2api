@@ -12,7 +12,7 @@ import (
 func TestComputeDashboardHealthScore_IdleReturns100(t *testing.T) {
 	t.Parallel()
 
-	score := computeDashboardHealthScore(time.Now().UTC(), &OpsDashboardOverview{})
+	score := computeDashboardHealthScore(time.Now().UTC(), &OpsDashboardOverview{}, nil)
 	require.Equal(t, 100, score)
 }
 
@@ -50,7 +50,7 @@ func TestComputeDashboardHealthScore_DegradesOnBadSignals(t *testing.T) {
 		},
 	}
 
-	score := computeDashboardHealthScore(time.Now().UTC(), ov)
+	score := computeDashboardHealthScore(time.Now().UTC(), ov, nil)
 	require.Less(t, score, 80)
 	require.GreaterOrEqual(t, score, 0)
 }
@@ -229,7 +229,7 @@ func TestComputeDashboardHealthScore_Comprehensive(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			score := computeDashboardHealthScore(time.Now().UTC(), tt.overview)
+			score := computeDashboardHealthScore(time.Now().UTC(), tt.overview, nil)
 			require.GreaterOrEqual(t, score, tt.wantMin, "score should be >= %d", tt.wantMin)
 			require.LessOrEqual(t, score, tt.wantMax, "score should be <= %d", tt.wantMax)
 			require.GreaterOrEqual(t, score, 0, "score must be >= 0")
@@ -328,13 +328,39 @@ func TestComputeBusinessHealth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			score := computeBusinessHealth(tt.overview)
+			score := computeBusinessHealth(tt.overview, nil)
 			require.GreaterOrEqual(t, score, tt.wantMin, "score should be >= %.1f", tt.wantMin)
 			require.LessOrEqual(t, score, tt.wantMax, "score should be <= %.1f", tt.wantMax)
 			require.GreaterOrEqual(t, score, 0.0, "score must be >= 0")
 			require.LessOrEqual(t, score, 100.0, "score must be <= 100")
 		})
 	}
+}
+
+func TestComputeDashboardHealthScore_UsesConfiguredThresholds(t *testing.T) {
+	t.Parallel()
+
+	overview := &OpsDashboardOverview{
+		RequestCountTotal: 100,
+		RequestCountSLA:   100,
+		ErrorRate:         0.02,
+		UpstreamErrorRate: 0.02,
+		TTFT:              OpsPercentiles{P99: intPtr(2_500)},
+	}
+	strictScore := computeDashboardHealthScore(time.Now().UTC(), overview, nil)
+
+	errFull := 5.0
+	errZero := 20.0
+	ttftFull := 3_000.0
+	ttftZero := 6_000.0
+	relaxedScore := computeDashboardHealthScore(time.Now().UTC(), overview, &OpsMetricThresholds{
+		HealthScoreErrorRateFullPercent: &errFull,
+		HealthScoreErrorRateZeroPercent: &errZero,
+		HealthScoreTTFTP99FullMs:        &ttftFull,
+		HealthScoreTTFTP99ZeroMs:        &ttftZero,
+	})
+
+	require.Greater(t, relaxedScore, strictScore)
 }
 
 func TestComputeInfraHealth(t *testing.T) {
