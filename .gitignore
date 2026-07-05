@@ -120,6 +120,8 @@ CLAUDE.md
 .claude
 scripts/*
 !scripts/sync-upstream.sh
+!backend/scripts/
+!backend/scripts/resolve-version.sh
 .code-review-state
 #openspec/
 code-reviews/
