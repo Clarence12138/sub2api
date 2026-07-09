@@ -81,6 +81,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // paymentOrderExpiry
 		nil, // channelMonitorRunner
 		nil, // quotaFlusher
+		nil, // openAIQuotaSync
 	)
 
 	require.NotPanics(t, func() {

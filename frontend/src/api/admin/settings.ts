@@ -1360,6 +1360,65 @@ export async function resetWebSearchUsage(payload: {
   );
 }
 
+// --- OpenAI Quota -> Subscription Sync ---
+
+export type OpenAIQuotaSubscriptionSyncWindow = "codex_5h" | "codex_7d";
+
+export interface OpenAIQuotaSubscriptionSyncRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  source_account_id: number;
+  source_window: OpenAIQuotaSubscriptionSyncWindow;
+  target_group_ids: number[];
+  reset_daily: boolean;
+  reset_weekly: boolean;
+  reset_monthly: boolean;
+}
+
+export interface OpenAIQuotaSubscriptionSyncConfig {
+  enabled: boolean;
+  poll_interval_seconds: number;
+  rules: OpenAIQuotaSubscriptionSyncRule[];
+}
+
+export interface OpenAIQuotaSubscriptionSyncRuleState {
+  rule_id: string;
+  last_seen_reset_at?: string;
+  last_polled_at?: string;
+  last_triggered_at?: string;
+  last_reset_count: number;
+  last_error?: string;
+  last_error_at?: string;
+  last_used_percent?: number;
+}
+
+export interface OpenAIQuotaSubscriptionSyncState {
+  rules: Record<string, OpenAIQuotaSubscriptionSyncRuleState>;
+}
+
+export interface OpenAIQuotaSubscriptionSyncView {
+  config: OpenAIQuotaSubscriptionSyncConfig;
+  state: OpenAIQuotaSubscriptionSyncState;
+}
+
+export async function getOpenAIQuotaSubscriptionSync(): Promise<OpenAIQuotaSubscriptionSyncView> {
+  const { data } = await apiClient.get<OpenAIQuotaSubscriptionSyncView>(
+    "/admin/settings/openai-quota-subscription-sync",
+  );
+  return data;
+}
+
+export async function updateOpenAIQuotaSubscriptionSync(
+  config: OpenAIQuotaSubscriptionSyncConfig,
+): Promise<OpenAIQuotaSubscriptionSyncView> {
+  const { data } = await apiClient.put<OpenAIQuotaSubscriptionSyncView>(
+    "/admin/settings/openai-quota-subscription-sync",
+    config,
+  );
+  return data;
+}
+
 export const settingsAPI = {
   getSettings,
   updateSettings,
@@ -1387,6 +1446,8 @@ export const settingsAPI = {
   updateWebSearchEmulationConfig,
   testWebSearchEmulation,
   resetWebSearchUsage,
+  getOpenAIQuotaSubscriptionSync,
+  updateOpenAIQuotaSubscriptionSync,
 };
 
 export default settingsAPI;

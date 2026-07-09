@@ -834,19 +834,47 @@ func (s *SubscriptionService) AdminResetQuota(ctx context.Context, subscriptionI
 		return nil, err
 	}
 	windowStart := startOfDay(time.Now())
+	if err := s.resetQuotaWindows(ctx, sub, resetDaily, resetWeekly, resetMonthly, windowStart); err != nil {
+		return nil, err
+	}
+	// Return the refreshed subscription from DB
+	return s.userSubRepo.GetByID(ctx, subscriptionID)
+}
+
+// ResetQuotaAt resets selected quota windows with an explicit window start.
+// It is used by internal automation that aligns local subscription windows to
+// an upstream provider's actual reset timestamp.
+func (s *SubscriptionService) ResetQuotaAt(ctx context.Context, subscriptionID int64, resetDaily, resetWeekly, resetMonthly bool, windowStart time.Time) (*UserSubscription, error) {
+	if !resetDaily && !resetWeekly && !resetMonthly {
+		return nil, ErrInvalidInput
+	}
+	if windowStart.IsZero() {
+		return nil, infraerrors.BadRequest("INVALID_WINDOW_START", "windowStart cannot be zero")
+	}
+	sub, err := s.userSubRepo.GetByID(ctx, subscriptionID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.resetQuotaWindows(ctx, sub, resetDaily, resetWeekly, resetMonthly, windowStart); err != nil {
+		return nil, err
+	}
+	return s.userSubRepo.GetByID(ctx, subscriptionID)
+}
+
+func (s *SubscriptionService) resetQuotaWindows(ctx context.Context, sub *UserSubscription, resetDaily, resetWeekly, resetMonthly bool, windowStart time.Time) error {
 	if resetDaily {
 		if err := s.userSubRepo.ResetDailyUsage(ctx, sub.ID, windowStart); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	if resetWeekly {
 		if err := s.userSubRepo.ResetWeeklyUsage(ctx, sub.ID, windowStart); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	if resetMonthly {
 		if err := s.userSubRepo.ResetMonthlyUsage(ctx, sub.ID, windowStart); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	// Invalidate L1 ristretto cache. Ristretto's Del() is asynchronous by design,
@@ -856,8 +884,7 @@ func (s *SubscriptionService) AdminResetQuota(ctx context.Context, subscriptionI
 	if s.billingCacheService != nil {
 		_ = s.billingCacheService.InvalidateSubscription(ctx, sub.UserID, sub.GroupID)
 	}
-	// Return the refreshed subscription from DB
-	return s.userSubRepo.GetByID(ctx, subscriptionID)
+	return nil
 }
 
 // CheckAndResetWindows 检查并重置过期的窗口

@@ -490,6 +490,9 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		adminSettings.PUT("/web-search-emulation", h.Admin.Setting.UpdateWebSearchEmulationConfig)
 		adminSettings.POST("/web-search-emulation/test", h.Admin.Setting.TestWebSearchEmulation)
 		adminSettings.POST("/web-search-emulation/reset-usage", h.Admin.Setting.ResetWebSearchUsage)
+		// OpenAI 官方额度同步订阅分组额度
+		adminSettings.GET("/openai-quota-subscription-sync", h.Admin.Setting.GetOpenAIQuotaSubscriptionSync)
+		adminSettings.PUT("/openai-quota-subscription-sync", h.Admin.Setting.UpdateOpenAIQuotaSubscriptionSync)
 	}
 }
 

@@ -1348,6 +1348,289 @@
               </div>
             </div>
           </div>
+          <!-- OpenAI Quota Subscription Sync -->
+          <div class="card">
+            <div
+              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
+            >
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                    {{ localText("额度同步", "Quota Sync") }}
+                  </h2>
+                  <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    {{
+                      localText(
+                        "OpenAI 官方 Codex 窗口切换后同步订阅分组额度",
+                        "Sync subscription quota after OpenAI Codex windows rotate",
+                      )
+                    }}
+                  </p>
+                </div>
+                <div class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                  <span>{{ localText("启用", "Enabled") }}</span>
+                  <Toggle v-model="openAIQuotaSyncForm.enabled" />
+                </div>
+              </div>
+            </div>
+            <div class="space-y-5 p-6">
+              <div
+                v-if="openAIQuotaSyncLoading"
+                class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400"
+              >
+                <div
+                  class="h-4 w-4 animate-spin rounded-full border-b-2 border-primary-600"
+                ></div>
+                {{ t("common.loading") }}
+              </div>
+
+              <template v-else>
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <div>
+                    <label
+                      class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                    >
+                      {{ localText("轮询间隔（秒）", "Poll interval (seconds)") }}
+                    </label>
+                    <input
+                      v-model.number="openAIQuotaSyncForm.poll_interval_seconds"
+                      type="number"
+                      min="1"
+                      class="input"
+                    />
+                  </div>
+                </div>
+
+                <div
+                  v-if="openAIQuotaSyncForm.rules.length === 0"
+                  class="rounded-lg border border-dashed border-gray-200 p-6 text-center text-sm text-gray-500 dark:border-dark-600 dark:text-gray-400"
+                >
+                  {{ localText("暂无规则", "No rules") }}
+                </div>
+
+                <div
+                  v-for="(rule, ruleIndex) in openAIQuotaSyncForm.rules"
+                  :key="rule.id || ruleIndex"
+                  class="rounded-lg border border-gray-200 p-4 dark:border-dark-600"
+                >
+                  <div class="mb-4 flex items-start justify-between gap-3">
+                    <div class="min-w-0 flex-1">
+                      <input
+                        v-model="rule.name"
+                        type="text"
+                        class="input input-sm"
+                        :placeholder="
+                          localText(
+                            `规则 ${ruleIndex + 1}`,
+                            `Rule ${ruleIndex + 1}`,
+                          )
+                        "
+                      />
+                    </div>
+                    <div class="flex shrink-0 items-center gap-2">
+                      <div class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                        <span>{{ localText("启用", "Enabled") }}</span>
+                        <Toggle v-model="rule.enabled" />
+                      </div>
+                      <button
+                        type="button"
+                        @click="removeOpenAIQuotaSyncRule(ruleIndex)"
+                        class="rounded p-1 text-red-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
+                        :title="localText('删除规则', 'Remove rule')"
+                      >
+                        <Icon name="x" size="sm" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div>
+                      <label
+                        class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                      >
+                        {{ localText("源账号", "Source account") }}
+                      </label>
+                      <select v-model.number="rule.source_account_id" class="input">
+                        <option :value="0">
+                          {{ localText("选择账号", "Select account") }}
+                        </option>
+                        <option
+                          v-for="account in openAIQuotaSyncAccounts"
+                          :key="account.id"
+                          :value="account.id"
+                        >
+                          {{ account.name }}
+                        </option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label
+                        class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                      >
+                        {{ localText("官方窗口", "Official window") }}
+                      </label>
+                      <select v-model="rule.source_window" class="input">
+                        <option
+                          v-for="option in openAIQuotaSyncWindowOptions"
+                          :key="option.value"
+                          :value="option.value"
+                        >
+                          {{ option.label }}
+                        </option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label
+                        class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                      >
+                        {{ localText("重置窗口", "Reset windows") }}
+                      </label>
+                      <div class="flex flex-wrap gap-3 rounded-md border border-gray-200 px-3 py-2 text-sm dark:border-dark-600">
+                        <label class="inline-flex items-center gap-1.5">
+                          <input
+                            v-model="rule.reset_daily"
+                            type="checkbox"
+                            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                          />
+                          daily
+                        </label>
+                        <label class="inline-flex items-center gap-1.5">
+                          <input
+                            v-model="rule.reset_weekly"
+                            type="checkbox"
+                            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                          />
+                          weekly
+                        </label>
+                        <label class="inline-flex items-center gap-1.5">
+                          <input
+                            v-model="rule.reset_monthly"
+                            type="checkbox"
+                            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                          />
+                          monthly
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="mt-4">
+                    <label
+                      class="mb-2 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                    >
+                      {{ localText("目标订阅分组", "Target subscription groups") }}
+                    </label>
+                    <div
+                      class="max-h-40 space-y-2 overflow-y-auto rounded-md border border-gray-200 p-3 dark:border-dark-600"
+                    >
+                      <label
+                        v-for="group in openAISubscriptionGroups"
+                        :key="group.id"
+                        class="flex items-center justify-between gap-3 text-sm text-gray-700 dark:text-gray-200"
+                      >
+                        <span class="min-w-0 truncate">{{ group.name }}</span>
+                        <input
+                          type="checkbox"
+                          class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                          :checked="rule.target_group_ids.includes(group.id)"
+                          @change="
+                            handleOpenAIQuotaSyncTargetGroupChange(
+                              rule,
+                              group.id,
+                              $event,
+                            )
+                          "
+                        />
+                      </label>
+                      <div
+                        v-if="openAISubscriptionGroups.length === 0"
+                        class="text-sm text-gray-500 dark:text-gray-400"
+                      >
+                        {{ localText("没有可选 OpenAI 订阅分组", "No OpenAI subscription groups") }}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    class="mt-4 grid grid-cols-1 gap-3 rounded-md bg-gray-50 p-3 text-xs text-gray-600 dark:bg-dark-700/50 dark:text-gray-300 md:grid-cols-4"
+                  >
+                    <div>
+                      <span class="block text-gray-400 dark:text-gray-500">
+                        {{ localText("最近轮询", "Last poll") }}
+                      </span>
+                      {{ formatOpenAIQuotaSyncTime(openAIQuotaSyncRuleState(rule)?.last_polled_at) }}
+                    </div>
+                    <div>
+                      <span class="block text-gray-400 dark:text-gray-500">
+                        {{ localText("官方 reset_at", "Official reset_at") }}
+                      </span>
+                      {{ formatOpenAIQuotaSyncTime(openAIQuotaSyncRuleState(rule)?.last_seen_reset_at) }}
+                    </div>
+                    <div>
+                      <span class="block text-gray-400 dark:text-gray-500">
+                        {{ localText("最近触发", "Last trigger") }}
+                      </span>
+                      {{ formatOpenAIQuotaSyncTime(openAIQuotaSyncRuleState(rule)?.last_triggered_at) }}
+                    </div>
+                    <div>
+                      <span class="block text-gray-400 dark:text-gray-500">
+                        {{ localText("用量 / 数量", "Usage / count") }}
+                      </span>
+                      {{
+                        formatOpenAIQuotaSyncPercent(
+                          openAIQuotaSyncRuleState(rule)?.last_used_percent,
+                        )
+                      }}
+                      /
+                      {{ openAIQuotaSyncRuleState(rule)?.last_reset_count ?? 0 }}
+                    </div>
+                    <div
+                      v-if="openAIQuotaSyncRuleState(rule)?.last_error"
+                      class="md:col-span-4"
+                    >
+                      <span class="block text-red-500">
+                        {{ localText("错误", "Error") }}
+                      </span>
+                      <span class="break-words text-red-600 dark:text-red-300">
+                        {{ openAIQuotaSyncRuleState(rule)?.last_error }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  class="flex flex-col gap-3 border-t border-gray-100 pt-4 dark:border-dark-700 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <button
+                    type="button"
+                    @click="addOpenAIQuotaSyncRule"
+                    class="btn btn-secondary btn-sm inline-flex items-center gap-1"
+                  >
+                    <Icon name="plus" size="sm" />
+                    {{ localText("添加规则", "Add rule") }}
+                  </button>
+                  <button
+                    type="button"
+                    @click="saveOpenAIQuotaSyncConfig"
+                    :disabled="openAIQuotaSyncSaving"
+                    class="btn btn-primary btn-sm"
+                  >
+                    <span
+                      v-if="openAIQuotaSyncSaving"
+                      class="mr-1 inline-block h-4 w-4 animate-spin rounded-full border-b-2 border-white"
+                    ></span>
+                    {{
+                      openAIQuotaSyncSaving
+                        ? t("common.saving")
+                        : t("common.save")
+                    }}
+                  </button>
+                </div>
+              </template>
+            </div>
+          </div>
         </div>
         <!-- /Tab: Gateway -->
 
@@ -7232,12 +7515,16 @@ import type {
   DefaultSubscriptionSetting,
   DefaultPlatformQuotasMap,
   OpenAIFastPolicyRule,
+  OpenAIQuotaSubscriptionSyncConfig,
+  OpenAIQuotaSubscriptionSyncRule,
+  OpenAIQuotaSubscriptionSyncState,
   WeChatConnectMode,
   WebSearchEmulationConfig,
   WebSearchProviderConfig,
   WebSearchTestResult,
 } from "@/api/admin/settings";
 import type {
+  Account,
   AdminGroup,
   LoginAgreementDocument,
   NotifyEmailEntry,
@@ -7451,6 +7738,19 @@ const openaiFastPolicyForm = reactive({
 // 标记 openai_fast_policy_settings 是否已成功从后端加载，
 // 避免后端 GET 出错或字段缺失时，保存把默认规则覆盖成空数组。
 const openaiFastPolicyLoaded = ref(false);
+
+// OpenAI 官方额度 -> 订阅额度同步
+const openAIQuotaSyncLoading = ref(false);
+const openAIQuotaSyncSaving = ref(false);
+const openAIQuotaSyncAccounts = ref<Account[]>([]);
+const openAIQuotaSyncState = ref<OpenAIQuotaSubscriptionSyncState>({
+  rules: {},
+});
+const openAIQuotaSyncForm = reactive<OpenAIQuotaSubscriptionSyncConfig>({
+  enabled: false,
+  poll_interval_seconds: 300,
+  rules: [],
+});
 
 const tablePageSizeMin = 5;
 const tablePageSizeMax = 1000;
@@ -8372,6 +8672,15 @@ const defaultSubscriptionGroupOptions = computed<
   })),
 );
 
+const openAISubscriptionGroups = computed(() =>
+  subscriptionGroups.value.filter((group) => group.platform === "openai"),
+);
+
+const openAIQuotaSyncWindowOptions = computed(() => [
+  { value: "codex_5h", label: "Codex 5h" },
+  { value: "codex_7d", label: "Codex 7d" },
+]);
+
 const registrationEmailSuffixWhitelistSeparatorKeys = new Set([
   " ",
   ",",
@@ -8923,6 +9232,7 @@ async function loadSettings() {
 
     // Load web search emulation config separately
     await loadWebSearchConfig();
+    await loadOpenAIQuotaSyncConfig();
   } catch (error: unknown) {
     loadFailed.value = true;
     appStore.showError(
@@ -8943,6 +9253,164 @@ async function loadSubscriptionGroups() {
   } catch (_error: unknown) {
     subscriptionGroups.value = [];
   }
+}
+
+async function loadOpenAIQuotaSyncAccounts() {
+  const resp = await adminAPI.accounts.list(1, 500, {
+    platform: "openai",
+    type: "oauth",
+    status: "active",
+    lite: "1",
+    sort_by: "name",
+    sort_order: "asc",
+  });
+  openAIQuotaSyncAccounts.value = resp.items || [];
+}
+
+async function loadOpenAIQuotaSyncConfig() {
+  openAIQuotaSyncLoading.value = true;
+  try {
+    const [view] = await Promise.all([
+      adminAPI.settings.getOpenAIQuotaSubscriptionSync(),
+      loadOpenAIQuotaSyncAccounts(),
+    ]);
+    assignOpenAIQuotaSyncConfig(view.config);
+    openAIQuotaSyncState.value = view.state || { rules: {} };
+  } catch (error: unknown) {
+    appStore.showError(
+      extractApiErrorMessage(
+        error,
+        localText("额度同步设置加载失败", "Failed to load quota sync settings"),
+      ),
+    );
+  } finally {
+    openAIQuotaSyncLoading.value = false;
+  }
+}
+
+function assignOpenAIQuotaSyncConfig(config: OpenAIQuotaSubscriptionSyncConfig) {
+  openAIQuotaSyncForm.enabled = Boolean(config?.enabled);
+  openAIQuotaSyncForm.poll_interval_seconds =
+    Number(config?.poll_interval_seconds) > 0
+      ? Number(config.poll_interval_seconds)
+      : 300;
+  openAIQuotaSyncForm.rules = Array.isArray(config?.rules)
+    ? config.rules.map(normalizeOpenAIQuotaSyncRule)
+    : [];
+}
+
+function normalizeOpenAIQuotaSyncRule(
+  rule: Partial<OpenAIQuotaSubscriptionSyncRule>,
+): OpenAIQuotaSubscriptionSyncRule {
+  return {
+    id: rule.id || "",
+    name: rule.name || "",
+    enabled: rule.enabled ?? true,
+    source_account_id: Number(rule.source_account_id) || 0,
+    source_window:
+      rule.source_window === "codex_7d" ? "codex_7d" : "codex_5h",
+    target_group_ids: Array.isArray(rule.target_group_ids)
+      ? rule.target_group_ids.map(Number).filter((id) => id > 0)
+      : [],
+    reset_daily: rule.reset_daily ?? true,
+    reset_weekly: Boolean(rule.reset_weekly),
+    reset_monthly: Boolean(rule.reset_monthly),
+  };
+}
+
+function buildOpenAIQuotaSyncPayload(): OpenAIQuotaSubscriptionSyncConfig {
+  return {
+    enabled: openAIQuotaSyncForm.enabled,
+    poll_interval_seconds:
+      Number(openAIQuotaSyncForm.poll_interval_seconds) || 300,
+    rules: openAIQuotaSyncForm.rules.map((rule) => ({
+      ...normalizeOpenAIQuotaSyncRule(rule),
+      id: rule.id,
+      name: rule.name.trim(),
+      target_group_ids: Array.from(new Set(rule.target_group_ids)),
+    })),
+  };
+}
+
+async function saveOpenAIQuotaSyncConfig() {
+  openAIQuotaSyncSaving.value = true;
+  try {
+    const view = await adminAPI.settings.updateOpenAIQuotaSubscriptionSync(
+      buildOpenAIQuotaSyncPayload(),
+    );
+    assignOpenAIQuotaSyncConfig(view.config);
+    openAIQuotaSyncState.value = view.state || { rules: {} };
+    appStore.showSuccess(localText("额度同步设置已保存", "Quota sync settings saved"));
+  } catch (error: unknown) {
+    appStore.showError(
+      extractApiErrorMessage(
+        error,
+        localText("额度同步设置保存失败", "Failed to save quota sync settings"),
+      ),
+    );
+  } finally {
+    openAIQuotaSyncSaving.value = false;
+  }
+}
+
+function addOpenAIQuotaSyncRule() {
+  openAIQuotaSyncForm.rules.push({
+    id: "",
+    name: "",
+    enabled: true,
+    source_account_id: openAIQuotaSyncAccounts.value[0]?.id || 0,
+    source_window: "codex_5h",
+    target_group_ids: openAISubscriptionGroups.value[0]
+      ? [openAISubscriptionGroups.value[0].id]
+      : [],
+    reset_daily: true,
+    reset_weekly: false,
+    reset_monthly: false,
+  });
+}
+
+function removeOpenAIQuotaSyncRule(index: number) {
+  openAIQuotaSyncForm.rules.splice(index, 1);
+}
+
+function toggleOpenAIQuotaSyncTargetGroup(
+  rule: OpenAIQuotaSubscriptionSyncRule,
+  groupID: number,
+  checked: boolean,
+) {
+  const ids = new Set(rule.target_group_ids);
+  if (checked) {
+    ids.add(groupID);
+  } else {
+    ids.delete(groupID);
+  }
+  rule.target_group_ids = Array.from(ids);
+}
+
+function handleOpenAIQuotaSyncTargetGroupChange(
+  rule: OpenAIQuotaSubscriptionSyncRule,
+  groupID: number,
+  event: Event,
+) {
+  const checked = Boolean((event.target as HTMLInputElement | null)?.checked);
+  toggleOpenAIQuotaSyncTargetGroup(rule, groupID, checked);
+}
+
+function openAIQuotaSyncRuleState(rule: OpenAIQuotaSubscriptionSyncRule) {
+  return rule.id ? openAIQuotaSyncState.value.rules?.[rule.id] : undefined;
+}
+
+function formatOpenAIQuotaSyncTime(value?: string) {
+  if (!value) return "-";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString();
+}
+
+function formatOpenAIQuotaSyncPercent(value?: number) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${value.toFixed(1)}%`
+    : "-";
 }
 
 function findNextAvailableSubscriptionGroup(

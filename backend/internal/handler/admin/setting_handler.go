@@ -64,6 +64,7 @@ type SettingHandler struct {
 	paymentService           *service.PaymentService
 	userAttributeService     *service.UserAttributeService
 	notificationEmailService *service.NotificationEmailService
+	openAIQuotaSyncService   *service.OpenAIQuotaSubscriptionSyncService
 }
 
 // NewSettingHandler 创建系统设置处理器
@@ -83,6 +84,11 @@ func NewSettingHandler(settingService *service.SettingService, emailService *ser
 // the constructor signature used by existing unit tests.
 func (h *SettingHandler) SetNotificationEmailService(notificationEmailService *service.NotificationEmailService) {
 	h.notificationEmailService = notificationEmailService
+}
+
+// SetOpenAIQuotaSubscriptionSyncService attaches the background sync settings API.
+func (h *SettingHandler) SetOpenAIQuotaSubscriptionSyncService(syncService *service.OpenAIQuotaSubscriptionSyncService) {
+	h.openAIQuotaSyncService = syncService
 }
 
 // GetSettings 获取所有系统设置
@@ -3528,6 +3534,41 @@ func (h *SettingHandler) UpdateWebSearchEmulationConfig(c *gin.Context) {
 		return
 	}
 	response.Success(c, service.PopulateWebSearchUsage(c.Request.Context(), updated))
+}
+
+// GetOpenAIQuotaSubscriptionSync 获取 OpenAI 官方额度同步订阅配置与状态
+// GET /api/v1/admin/settings/openai-quota-subscription-sync
+func (h *SettingHandler) GetOpenAIQuotaSubscriptionSync(c *gin.Context) {
+	if h.openAIQuotaSyncService == nil {
+		response.ErrorFrom(c, service.ErrSettingNotFound)
+		return
+	}
+	view, err := h.openAIQuotaSyncService.GetView(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, view)
+}
+
+// UpdateOpenAIQuotaSubscriptionSync 更新 OpenAI 官方额度同步订阅配置
+// PUT /api/v1/admin/settings/openai-quota-subscription-sync
+func (h *SettingHandler) UpdateOpenAIQuotaSubscriptionSync(c *gin.Context) {
+	if h.openAIQuotaSyncService == nil {
+		response.ErrorFrom(c, service.ErrSettingNotFound)
+		return
+	}
+	var cfg service.OpenAIQuotaSubscriptionSyncConfig
+	if err := c.ShouldBindJSON(&cfg); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	view, err := h.openAIQuotaSyncService.UpdateConfig(c.Request.Context(), cfg)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, view)
 }
 
 // ResetWebSearchUsage 重置指定 provider 的配额用量

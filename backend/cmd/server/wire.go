@@ -101,6 +101,7 @@ func provideCleanup(
 	paymentOrderExpiry *service.PaymentOrderExpiryService,
 	channelMonitorRunner *service.ChannelMonitorRunner,
 	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
+	openAIQuotaSync *service.OpenAIQuotaSubscriptionSyncService,
 ) func() {
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -262,6 +263,12 @@ func provideCleanup(
 			{"UserPlatformQuotaUsageFlusher", func() error {
 				if quotaFlusher != nil {
 					quotaFlusher.Stop()
+				}
+				return nil
+			}},
+			{"OpenAIQuotaSubscriptionSyncService", func() error {
+				if openAIQuotaSync != nil {
+					openAIQuotaSync.Stop()
 				}
 				return nil
 			}},

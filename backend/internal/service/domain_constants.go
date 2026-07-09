@@ -485,6 +485,10 @@ const (
 
 	// Web Search Emulation
 	SettingKeyWebSearchEmulationConfig = "web_search_emulation_config" // JSON 配置
+
+	// OpenAI official quota -> subscription quota sync.
+	SettingKeyOpenAIQuotaSubscriptionSyncConfig = "openai_quota_subscription_sync_config" // JSON 配置
+	SettingKeyOpenAIQuotaSubscriptionSyncState  = "openai_quota_subscription_sync_state"  // JSON 状态
 )
 
 // SettingKeyDefaultPlatformQuotas —— 系统全局：每用户 × 平台日/周/月 USD 上限（JSON）。
