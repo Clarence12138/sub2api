@@ -28,6 +28,7 @@ const (
 	NotificationEmailEventBalanceLow                  = "balance.low"
 	NotificationEmailEventBalanceRechargeSuccess      = "balance.recharge_success"
 	NotificationEmailEventAccountQuotaAlert           = "account.quota_alert"
+	NotificationEmailEventAccountQuotaRefresh         = "account.quota_refresh"
 	NotificationEmailEventContentModerationViolation  = "content_moderation.violation_notice"
 	NotificationEmailEventContentModerationDisabled   = "content_moderation.account_disabled"
 	NotificationEmailEventCyberPolicyNotice           = "content_moderation.cyber_policy_notice"
@@ -711,7 +712,14 @@ func renderNotificationEmailString(event, raw string, variables map[string]strin
 }
 
 func notificationEmailRawHTMLAllowed(event, placeholder string) bool {
-	return event == NotificationEmailEventOpsScheduledReport && placeholder == "report_html"
+	if event == NotificationEmailEventOpsScheduledReport && placeholder == "report_html" {
+		return true
+	}
+	// 额度刷新通知中的窗口明细表由服务端生成 HTML，允许原样注入
+	if event == NotificationEmailEventAccountQuotaRefresh && placeholder == "windows_html" {
+		return true
+	}
+	return false
 }
 
 func notificationEmailAllowedPlaceholderSet(event string) map[string]struct{} {
@@ -946,6 +954,7 @@ var notificationEmailEventOrder = []string{
 	NotificationEmailEventBalanceLow,
 	NotificationEmailEventBalanceRechargeSuccess,
 	NotificationEmailEventAccountQuotaAlert,
+	NotificationEmailEventAccountQuotaRefresh,
 	NotificationEmailEventContentModerationViolation,
 	NotificationEmailEventContentModerationDisabled,
 	NotificationEmailEventCyberPolicyNotice,
@@ -1018,6 +1027,15 @@ var notificationEmailEventDefinitions = map[string]NotificationEmailEventInfo{
 		Optional:    false,
 		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...),
 			"account_id", "account_name", "platform", "quota_dimension", "quota_used", "quota_limit", "quota_remaining", "quota_threshold"),
+	},
+	NotificationEmailEventAccountQuotaRefresh: {
+		Event:       NotificationEmailEventAccountQuotaRefresh,
+		Label:       "Account quota refresh",
+		Description: "Sent to admin primary emails when a watched upstream account usage window resets and capacity becomes available again.",
+		Category:    "admin",
+		Optional:    true,
+		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...),
+			"account_id", "account_name", "platform", "windows_summary", "windows_html"),
 	},
 	NotificationEmailEventContentModerationViolation: {
 		Event:       NotificationEmailEventContentModerationViolation,
@@ -1230,6 +1248,30 @@ var notificationEmailOfficialTemplates = map[string]map[string]notificationEmail
   <tr><td>剩余额度</td><td>{{quota_remaining}}</td></tr>
   <tr><td>告警阈值</td><td>{{quota_threshold}}</td></tr>
 </table>`),
+		},
+	},
+	NotificationEmailEventAccountQuotaRefresh: {
+		notificationEmailDefaultLocale: {
+			Subject: "[{{site_name}}] Account quota refreshed - {{account_name}}",
+			HTML: notificationEmailCard("#059669", "Account quota refreshed", `
+<p>The watched upstream account <strong>{{account_name}}</strong> has a usage window that reset. Capacity is available again.</p>
+<table style="width:100%;border-collapse:collapse;">
+  <tr><td>Account ID</td><td>{{account_id}}</td></tr>
+  <tr><td>Platform</td><td>{{platform}}</td></tr>
+  <tr><td>Windows</td><td>{{windows_summary}}</td></tr>
+</table>
+{{windows_html}}`),
+		},
+		notificationEmailLocaleChinese: {
+			Subject: "[{{site_name}}] 账号额度已刷新 - {{account_name}}",
+			HTML: notificationEmailCard("#059669", "账号额度已刷新", `
+<p>关注的上游账号 <strong>{{account_name}}</strong> 用量窗口已重置，额度恢复可用。</p>
+<table style="width:100%;border-collapse:collapse;">
+  <tr><td>账号 ID</td><td>{{account_id}}</td></tr>
+  <tr><td>平台</td><td>{{platform}}</td></tr>
+  <tr><td>窗口</td><td>{{windows_summary}}</td></tr>
+</table>
+{{windows_html}}`),
 		},
 	},
 	NotificationEmailEventContentModerationViolation: {

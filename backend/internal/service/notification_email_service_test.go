@@ -135,20 +135,22 @@ func TestNotificationEmailAdditionalEventsAreListedAndPreviewable(t *testing.T) 
 	checks := []struct {
 		event       string
 		placeholder string
+		optional    bool
 	}{
-		{NotificationEmailEventNotificationEmailVerifyCode, "verification_code"},
-		{NotificationEmailEventAccountQuotaAlert, "account_name"},
-		{NotificationEmailEventContentModerationViolation, "moderation_category"},
-		{NotificationEmailEventContentModerationDisabled, "violation_count"},
-		{NotificationEmailEventCyberPolicyNotice, "upstream_message"},
-		{NotificationEmailEventOpsAlert, "rule_name"},
-		{NotificationEmailEventOpsScheduledReport, "report_html"},
+		{NotificationEmailEventNotificationEmailVerifyCode, "verification_code", false},
+		{NotificationEmailEventAccountQuotaAlert, "account_name", false},
+		{NotificationEmailEventAccountQuotaRefresh, "windows_summary", true},
+		{NotificationEmailEventContentModerationViolation, "moderation_category", false},
+		{NotificationEmailEventContentModerationDisabled, "violation_count", false},
+		{NotificationEmailEventCyberPolicyNotice, "upstream_message", false},
+		{NotificationEmailEventOpsAlert, "rule_name", false},
+		{NotificationEmailEventOpsScheduledReport, "report_html", false},
 	}
 
 	for _, check := range checks {
 		info, ok := events[check.event]
 		require.Truef(t, ok, "expected %s to be listed", check.event)
-		require.False(t, info.Optional)
+		require.Equal(t, check.optional, info.Optional)
 		require.Contains(t, info.Placeholders, check.placeholder)
 
 		preview, err := svc.PreviewTemplate(ctx, NotificationEmailPreviewInput{Event: check.event, Locale: "zh"})
@@ -191,6 +193,21 @@ func TestNotificationEmailRawHTMLVariablesAreTrustedOnlyForHTMLPlaceholders(t *t
 	require.NoError(t, err)
 	require.Contains(t, preview.HTML, `&lt;em&gt;escaped&lt;/em&gt;`)
 	require.NotContains(t, preview.HTML, `<strong>raw</strong>`)
+}
+
+func TestQuotaRefreshNotificationRendersWindowTableAndEscapesAccountName(t *testing.T) {
+	preview, err := renderNotificationEmail(
+		NotificationEmailEventAccountQuotaRefresh,
+		"Quota refreshed: {{account_name}}",
+		"<p>{{account_name}}</p>{{windows_html}}",
+		map[string]string{"account_name": "<unsafe>"},
+		map[string]string{"windows_html": "<table><tr><td>5h</td></tr></table>"},
+	)
+
+	require.NoError(t, err)
+	require.Contains(t, preview.HTML, "&lt;unsafe&gt;")
+	require.NotContains(t, preview.HTML, "<p><unsafe></p>")
+	require.Contains(t, preview.HTML, "<table><tr><td>5h</td></tr></table>")
 }
 
 func TestNotificationEmailFallbackClassification(t *testing.T) {

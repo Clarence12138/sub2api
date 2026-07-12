@@ -229,6 +229,24 @@ func ProvideSubscriptionExpiryService(userSubRepo UserSubscriptionRepository, se
 	return svc
 }
 
+// ProvideQuotaRefreshNotifyService 创建并启动上游额度刷新通知服务。
+func ProvideQuotaRefreshNotifyService(
+	accountRepo AccountRepository,
+	usageService *AccountUsageService,
+	userRepo UserRepository,
+	settingRepo SettingRepository,
+	emailService *EmailService,
+	notificationEmailService *NotificationEmailService,
+	lockCache LeaderLockCache,
+	db *sql.DB,
+) *QuotaRefreshNotifyService {
+	svc := NewQuotaRefreshNotifyService(accountRepo, usageService, userRepo, settingRepo, emailService, quotaRefreshNotifyDefaultInterval)
+	svc.SetNotificationEmailService(notificationEmailService)
+	svc.SetLeaderLock(lockCache, db)
+	svc.Start()
+	return svc
+}
+
 // ProvideTimingWheelService creates and starts TimingWheelService
 func ProvideTimingWheelService() (*TimingWheelService, error) {
 	svc, err := NewTimingWheelService()
@@ -630,6 +648,7 @@ var ProviderSet = wire.NewSet(
 	ProvideAccountExpiryService,
 	ProvideProxyExpiryService,
 	ProvideSubscriptionExpiryService,
+	ProvideQuotaRefreshNotifyService,
 	ProvideTimingWheelService,
 	ProvideDashboardAggregationService,
 	ProvideUsageCleanupService,

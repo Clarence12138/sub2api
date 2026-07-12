@@ -357,6 +357,11 @@ const eventDisplayMeta: Record<string, EventDisplayMeta> = {
     timing: "上游账号的用量达到配置的额度告警阈值时发送给管理员通知邮箱。",
     categoryLabel: "管理告警",
   },
+  "account.quota_refresh": {
+    label: "账号额度刷新通知",
+    timing: "关注的上游账号用量窗口（如 5h/7d）重置、额度恢复时发送给管理员主邮箱。",
+    categoryLabel: "管理告警",
+  },
   "content_moderation.violation_notice": {
     label: "内容审计违规提醒",
     timing: "用户请求命中内容审计或风控规则、但尚未被禁用时发送。",
@@ -418,6 +423,11 @@ const eventDisplayMetaEn: Record<string, EventDisplayMeta> = {
   "account.quota_alert": {
     label: "Account Quota Alert",
     timing: "Sent to admin notification emails when an upstream account reaches the configured quota alert threshold.",
+    categoryLabel: "Admin",
+  },
+  "account.quota_refresh": {
+    label: "Account Quota Refresh",
+    timing: "Sent to admin primary emails when a watched upstream account usage window (e.g. 5h/7d) resets and capacity is available again.",
     categoryLabel: "Admin",
   },
   "content_moderation.violation_notice": {

@@ -2120,6 +2120,83 @@ func (a *Account) GetQuotaNotifyTotalThresholdType() string {
 	return tt
 }
 
+// --- Quota Refresh Notify (上游窗口重置通知) ---
+
+const (
+	// Extra key: 是否关注该账号的上游额度刷新通知
+	extraKeyQuotaRefreshNotifyEnabled = "quota_refresh_notify_enabled"
+	// Extra key: 关注的窗口维度列表（string[]，如 five_hour / seven_day）
+	// 为空或缺省时表示关注所有可探测窗口（兼容旧配置）
+	extraKeyQuotaRefreshNotifyWindows = "quota_refresh_notify_windows"
+	// Extra key: 上次采样快照（用于检测重置）
+	extraKeyQuotaRefreshNotifySnapshot = "quota_refresh_notify_snapshot"
+	// Extra key: 最近一次发送时间（RFC3339，防抖）
+	extraKeyQuotaRefreshLastNotifiedAt = "quota_refresh_last_notified_at"
+	// Extra key: 各窗口最近一次成功发送时间（RFC3339 map）。
+	extraKeyQuotaRefreshLastNotifiedWindows = "quota_refresh_last_notified_windows"
+	// Extra key: 尚未完整投递的刷新事件，用于失败重试和逐收件人去重。
+	extraKeyQuotaRefreshPending = "quota_refresh_notify_pending"
+
+	// 可选窗口 key（与 extractUsageWindows 对齐）
+	QuotaRefreshWindowFiveHour          = "five_hour"
+	QuotaRefreshWindowSevenDay          = "seven_day"
+	QuotaRefreshWindowSevenDaySonnet    = "seven_day_sonnet"
+	QuotaRefreshWindowSevenDayFable     = "seven_day_fable"
+	QuotaRefreshWindowGeminiSharedDaily = "gemini_shared_daily"
+	QuotaRefreshWindowGeminiProDaily    = "gemini_pro_daily"
+	QuotaRefreshWindowGeminiFlashDaily  = "gemini_flash_daily"
+	// 通配：匹配所有 antigravity:<model> 窗口
+	QuotaRefreshWindowAntigravityAll = "antigravity"
+)
+
+// GetQuotaRefreshNotifyEnabled 返回是否开启上游额度刷新邮件通知。
+func (a *Account) GetQuotaRefreshNotifyEnabled() bool {
+	if a == nil {
+		return false
+	}
+	return a.getExtraBool(extraKeyQuotaRefreshNotifyEnabled)
+}
+
+// GetQuotaRefreshNotifyWindows 返回关注的窗口 key 列表。
+// 返回 nil/空 表示未限制（关注所有可探测窗口）。
+func (a *Account) GetQuotaRefreshNotifyWindows() []string {
+	if a == nil || a.Extra == nil {
+		return nil
+	}
+	raw, ok := a.Extra[extraKeyQuotaRefreshNotifyWindows]
+	if !ok || raw == nil {
+		return nil
+	}
+	return parseQuotaRefreshWindowList(raw)
+}
+
+// parseQuotaRefreshWindowList 将 extra 中的窗口列表解析为去重后的 string slice。
+func parseQuotaRefreshWindowList(raw any) []string {
+	var out []string
+	seen := make(map[string]bool)
+	appendKey := func(s string) {
+		s = strings.TrimSpace(s)
+		if s == "" || seen[s] {
+			return
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	switch v := raw.(type) {
+	case []string:
+		for _, s := range v {
+			appendKey(s)
+		}
+	case []any:
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				appendKey(s)
+			}
+		}
+	}
+	return out
+}
+
 // nextFixedDailyReset 计算在 after 之后的下一个每日固定重置时间点
 func nextFixedDailyReset(hour int, tz *time.Location, after time.Time) time.Time {
 	t := after.In(tz)
