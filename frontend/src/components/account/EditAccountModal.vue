@@ -2457,6 +2457,66 @@
         data-tour="account-form-groups"
       />
 
+      <!-- 上游额度刷新通知（关注账号 + 窗口多选） -->
+      <div
+        v-if="supportsQuotaRefreshNotify"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-3"
+      >
+        <div class="flex items-center justify-between gap-4">
+          <div class="min-w-0">
+            <label class="input-label mb-0">{{ t('admin.accounts.quotaRefreshNotify.label') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.quotaRefreshNotify.hint') }}
+            </p>
+          </div>
+          <button
+            type="button"
+            @click="toggleQuotaRefreshNotify"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              quotaRefreshNotifyEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+            role="switch"
+            :aria-label="t('admin.accounts.quotaRefreshNotify.label')"
+            :aria-checked="quotaRefreshNotifyEnabled"
+            data-testid="quota-refresh-notify-toggle"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                quotaRefreshNotifyEnabled ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+        <div v-if="quotaRefreshNotifyEnabled" class="rounded-lg border border-gray-200 p-3 dark:border-dark-600">
+          <p class="mb-2 text-xs font-medium text-gray-700 dark:text-gray-300">
+            {{ t('admin.accounts.quotaRefreshNotify.windowsLabel') }}
+          </p>
+          <div class="flex flex-wrap gap-x-4 gap-y-2">
+            <label
+              v-for="opt in quotaRefreshWindowOptions"
+              :key="opt.value"
+              class="inline-flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer"
+            >
+              <input
+                type="checkbox"
+                class="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500 dark:bg-dark-700"
+                :checked="quotaRefreshNotifyWindows.includes(opt.value)"
+                :data-testid="`quota-refresh-window-${opt.value}`"
+                @change="toggleQuotaRefreshWindow(opt.value)"
+              />
+              <span>{{ opt.label }}</span>
+            </label>
+          </div>
+          <p
+            v-if="quotaRefreshNotifyWindows.length === 0"
+            class="mt-2 text-xs text-amber-600 dark:text-amber-400"
+          >
+            {{ t('admin.accounts.quotaRefreshNotify.windowsRequired') }}
+          </p>
+        </div>
+      </div>
     </form>
 
     <template #footer>
@@ -2779,6 +2839,80 @@ const {
   writeToExtra: writeQuotaNotifyToExtra,
   reset: resetQuotaNotify,
 } = useQuotaNotifyState()
+
+// 上游订阅窗口额度刷新邮件通知（账号级开关 + 窗口多选）
+const quotaRefreshNotifyEnabled = ref(false)
+const quotaRefreshNotifyWindows = ref<string[]>([])
+
+/** 支持上游 usage 窗口探测的账号类型 */
+const supportsQuotaRefreshNotify = computed(() => {
+  const a = props.account
+  if (!a) return false
+  if (a.platform === 'anthropic' && (a.type === 'oauth' || a.type === 'setup-token')) return true
+  if (a.platform === 'openai' && a.type === 'oauth') return true
+  return false
+})
+
+/** 按平台可选的窗口维度 */
+const quotaRefreshWindowOptions = computed(() => {
+  const a = props.account
+  if (!a) return [] as { value: string; label: string }[]
+  const L = (key: string) => t(`admin.accounts.quotaRefreshNotify.windows.${key}`)
+  if (a.platform === 'anthropic' && a.type === 'setup-token') {
+    return [{ value: 'five_hour', label: L('five_hour') }]
+  }
+  if (a.platform === 'anthropic' && a.type === 'oauth') {
+    const opts = [
+      { value: 'five_hour', label: L('five_hour') },
+      { value: 'seven_day', label: L('seven_day') },
+    ]
+    opts.push(
+      { value: 'seven_day_sonnet', label: L('seven_day_sonnet') },
+      { value: 'seven_day_fable', label: L('seven_day_fable') },
+    )
+    return opts
+  }
+  if (a.platform === 'openai' && a.type === 'oauth') {
+    return [
+      { value: 'five_hour', label: L('five_hour') },
+      { value: 'seven_day', label: L('seven_day') },
+    ]
+  }
+  return []
+})
+
+const defaultQuotaRefreshWindows = (): string[] => {
+  return quotaRefreshWindowOptions.value.map((o) => o.value).filter((v) =>
+    v === 'five_hour' || v === 'seven_day'
+  )
+}
+
+const toggleQuotaRefreshNotify = () => {
+  quotaRefreshNotifyEnabled.value = !quotaRefreshNotifyEnabled.value
+  if (!quotaRefreshNotifyEnabled.value) {
+    quotaRefreshNotifyWindows.value = []
+    return
+  }
+  if (quotaRefreshNotifyWindows.value.length === 0) {
+    // 开启时默认勾选主窗口（5h + 7d 等）
+    const defaults = defaultQuotaRefreshWindows()
+    quotaRefreshNotifyWindows.value = defaults.length > 0
+      ? defaults
+      : quotaRefreshWindowOptions.value.map((o) => o.value)
+  }
+}
+
+const toggleQuotaRefreshWindow = (key: string) => {
+  const set = new Set(quotaRefreshNotifyWindows.value)
+  if (set.has(key)) {
+    set.delete(key)
+  } else {
+    set.add(key)
+  }
+  // 保持选项顺序
+  const order = quotaRefreshWindowOptions.value.map((o) => o.value)
+  quotaRefreshNotifyWindows.value = order.filter((k) => set.has(k))
+}
 
 // Load global feature states once
 adminAPI.settings.getWebSearchEmulationConfig().then(cfg => {
@@ -3180,6 +3314,23 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 	autoPause7dThreshold.value = typeof extra?.auto_pause_7d_threshold === 'number' ? extra.auto_pause_7d_threshold * 100 : null
 	autoPause5hDisabled.value = extra?.auto_pause_5h_disabled === true
 	autoPause7dDisabled.value = extra?.auto_pause_7d_disabled === true
+	quotaRefreshNotifyEnabled.value = extra?.quota_refresh_notify_enabled === true
+	// 加载窗口多选；兼容旧配置（仅开开关未写 windows → 默认主窗口）
+	{
+		const raw = extra?.quota_refresh_notify_windows
+		const allowed = new Set(quotaRefreshWindowOptions.value.map((o) => o.value))
+		let selected: string[] = []
+		if (Array.isArray(raw)) {
+			selected = raw.filter((v): v is string => typeof v === 'string' && allowed.has(v))
+		}
+		if (quotaRefreshNotifyEnabled.value && selected.length === 0) {
+			selected = defaultQuotaRefreshWindows()
+			if (selected.length === 0) {
+				selected = quotaRefreshWindowOptions.value.map((o) => o.value)
+			}
+		}
+		quotaRefreshNotifyWindows.value = selected
+	}
 
   // Load OpenAI passthrough toggle (OpenAI OAuth/SetupToken/API Key)
   openaiPassthroughEnabled.value = false
@@ -4472,6 +4623,32 @@ const handleSubmit = async () => {
       }
       // Quota notify config
       writeQuotaNotifyToExtra(newExtra, 'update')
+      updatePayload.extra = newExtra
+    }
+
+    // 上游额度刷新通知开关 + 窗口多选（写入 extra）
+    if (supportsQuotaRefreshNotify.value) {
+      const currentExtra =
+        (updatePayload.extra as Record<string, unknown>) ||
+        (props.account.extra as Record<string, unknown>) ||
+        {}
+      const newExtra: Record<string, unknown> = { ...currentExtra }
+      if (quotaRefreshNotifyEnabled.value) {
+        if (quotaRefreshNotifyWindows.value.length === 0) {
+          appStore.showError(t('admin.accounts.quotaRefreshNotify.windowsRequired'))
+          return
+        }
+        newExtra.quota_refresh_notify_enabled = true
+        newExtra.quota_refresh_notify_windows = [...quotaRefreshNotifyWindows.value]
+      } else {
+        delete newExtra.quota_refresh_notify_enabled
+        delete newExtra.quota_refresh_notify_windows
+        // 关闭时清理采样状态，避免再次开启时误用陈旧 snapshot
+        delete newExtra.quota_refresh_notify_snapshot
+        delete newExtra.quota_refresh_last_notified_at
+        delete newExtra.quota_refresh_last_notified_windows
+        delete newExtra.quota_refresh_notify_pending
+      }
       updatePayload.extra = newExtra
     }
 

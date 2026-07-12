@@ -278,6 +278,31 @@ function buildOpenAISetupTokenAccount() {
   } as any
 }
 
+function buildOpenAIOAuthAccount() {
+  return {
+    ...buildAccount(),
+    name: 'OpenAI OAuth',
+    type: 'oauth',
+    credentials: {
+      access_token: 'openai-access-token',
+      refresh_token: 'openai-refresh-token'
+    }
+  } as any
+}
+
+function buildAnthropicAccount(type: 'oauth' | 'setup-token') {
+  return {
+    ...buildAccount(),
+    name: `Anthropic ${type}`,
+    platform: 'anthropic',
+    type,
+    credentials: {
+      access_token: 'anthropic-access-token',
+      refresh_token: 'anthropic-refresh-token'
+    }
+  } as any
+}
+
 function mountModal(account = buildAccount()) {
   return mount(EditAccountModal, {
     props: {
@@ -410,6 +435,130 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.model_mapping).toEqual({
       grok: 'grok-build-0.1'
     })
+  })
+
+  it('only exposes quota refresh notifications for account types with reliable usage windows', async () => {
+    const grokWrapper = mountModal(buildGrokOAuthAccount())
+    expect(grokWrapper.find('[data-testid="quota-refresh-notify-toggle"]').exists()).toBe(false)
+
+    const openAISetupWrapper = mountModal(buildOpenAISetupTokenAccount())
+    expect(openAISetupWrapper.find('[data-testid="quota-refresh-notify-toggle"]').exists()).toBe(false)
+
+    const anthropicSetupWrapper = mountModal(buildAnthropicAccount('setup-token'))
+    await anthropicSetupWrapper.get('[data-testid="quota-refresh-notify-toggle"]').trigger('click')
+
+    expect(anthropicSetupWrapper.find('[data-testid="quota-refresh-window-five_hour"]').exists()).toBe(true)
+    expect(anthropicSetupWrapper.find('[data-testid="quota-refresh-window-seven_day"]').exists()).toBe(false)
+  })
+
+  it('enables accessible OpenAI OAuth quota refresh notifications with 5h and 7d defaults', async () => {
+    const wrapper = mountModal(buildOpenAIOAuthAccount())
+    const toggle = wrapper.get('[data-testid="quota-refresh-notify-toggle"]')
+
+    expect(toggle.attributes('role')).toBe('switch')
+    expect(toggle.attributes('aria-label')).toBe('admin.accounts.quotaRefreshNotify.label')
+    expect(toggle.attributes('aria-checked')).toBe('false')
+
+    await toggle.trigger('click')
+
+    expect(toggle.attributes('aria-checked')).toBe('true')
+    expect(wrapper.get<HTMLInputElement>('[data-testid="quota-refresh-window-five_hour"]').element.checked).toBe(true)
+    expect(wrapper.get<HTMLInputElement>('[data-testid="quota-refresh-window-seven_day"]').element.checked).toBe(true)
+  })
+
+  it('submits the selected OpenAI OAuth windows without overwriting unrelated extra fields', async () => {
+    const account = buildOpenAIOAuthAccount()
+    account.extra = { preserved_setting: 'keep-me' }
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.get('[data-testid="quota-refresh-notify-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="quota-refresh-window-seven_day"]').trigger('change')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toMatchObject({
+      preserved_setting: 'keep-me',
+      quota_refresh_notify_enabled: true,
+      quota_refresh_notify_windows: ['five_hour']
+    })
+  })
+
+  it('blocks saving when quota refresh notifications have no selected window', async () => {
+    const account = buildOpenAIOAuthAccount()
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+
+    const wrapper = mountModal(account)
+    await wrapper.get('[data-testid="quota-refresh-notify-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="quota-refresh-window-five_hour"]').trigger('change')
+    await wrapper.get('[data-testid="quota-refresh-window-seven_day"]').trigger('change')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('admin.accounts.quotaRefreshNotify.windowsRequired')
+  })
+
+  it('clears quota refresh state when disabled and restores defaults when re-enabled', async () => {
+    const account = buildOpenAIOAuthAccount()
+    account.extra = {
+      preserved_setting: 'keep-me',
+      quota_refresh_notify_enabled: true,
+      quota_refresh_notify_windows: ['seven_day'],
+      quota_refresh_notify_snapshot: { seven_day: { utilization: 80 } },
+      quota_refresh_last_notified_at: '2026-07-12T01:00:00Z',
+      quota_refresh_last_notified_windows: { five_hour: '2026-07-12T01:00:00Z' },
+      quota_refresh_notify_pending: { event_key: 'pending' }
+    }
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    expect(wrapper.get<HTMLInputElement>('[data-testid="quota-refresh-window-five_hour"]').element.checked).toBe(false)
+    expect(wrapper.get<HTMLInputElement>('[data-testid="quota-refresh-window-seven_day"]').element.checked).toBe(true)
+
+    await wrapper.get('[data-testid="quota-refresh-notify-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="quota-refresh-notify-toggle"]').trigger('click')
+
+    expect(wrapper.get<HTMLInputElement>('[data-testid="quota-refresh-window-five_hour"]').element.checked).toBe(true)
+    expect(wrapper.get<HTMLInputElement>('[data-testid="quota-refresh-window-seven_day"]').element.checked).toBe(true)
+
+    await wrapper.get('[data-testid="quota-refresh-notify-toggle"]').trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    const extra = updateAccountMock.mock.calls[0]?.[1]?.extra
+    expect(extra?.preserved_setting).toBe('keep-me')
+    expect(extra).not.toHaveProperty('quota_refresh_notify_enabled')
+    expect(extra).not.toHaveProperty('quota_refresh_notify_windows')
+    expect(extra).not.toHaveProperty('quota_refresh_notify_snapshot')
+    expect(extra).not.toHaveProperty('quota_refresh_last_notified_at')
+    expect(extra).not.toHaveProperty('quota_refresh_last_notified_windows')
+    expect(extra).not.toHaveProperty('quota_refresh_notify_pending')
+  })
+
+  it('rehydrates quota refresh window selections when the modal is reopened', async () => {
+    const account = buildOpenAIOAuthAccount()
+    account.extra = {
+      quota_refresh_notify_enabled: true,
+      quota_refresh_notify_windows: ['seven_day']
+    }
+    const wrapper = mountModal(account)
+
+    await wrapper.get('[data-testid="quota-refresh-window-five_hour"]').trigger('change')
+    expect(wrapper.get<HTMLInputElement>('[data-testid="quota-refresh-window-five_hour"]').element.checked).toBe(true)
+
+    await wrapper.setProps({ show: false })
+    await wrapper.setProps({ show: true })
+
+    expect(wrapper.get<HTMLInputElement>('[data-testid="quota-refresh-window-five_hour"]').element.checked).toBe(false)
+    expect(wrapper.get<HTMLInputElement>('[data-testid="quota-refresh-window-seven_day"]').element.checked).toBe(true)
   })
 
   it('only submits model mapping credentials when saving an OpenAI spark shadow account', async () => {
