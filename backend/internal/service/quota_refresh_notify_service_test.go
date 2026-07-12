@@ -588,16 +588,6 @@ func TestParseAndSnapshotRoundTrip(t *testing.T) {
 	assert.True(t, parsed.Windows["five_hour"].ResetsAt.Equal(reset))
 }
 
-func TestParseLastNotifiedAt(t *testing.T) {
-	assert.Nil(t, parseLastNotifiedAt(nil))
-	assert.Nil(t, parseLastNotifiedAt(map[string]any{}))
-
-	ts := "2026-07-12T10:00:00Z"
-	got := parseLastNotifiedAt(map[string]any{extraKeyQuotaRefreshLastNotifiedAt: ts})
-	require.NotNil(t, got)
-	assert.Equal(t, ts, got.UTC().Format(time.RFC3339))
-}
-
 func TestGetQuotaRefreshNotifyEnabled(t *testing.T) {
 	assert.False(t, (*Account)(nil).GetQuotaRefreshNotifyEnabled())
 	assert.False(t, (&Account{}).GetQuotaRefreshNotifyEnabled())
@@ -690,12 +680,4 @@ func TestGetQuotaRefreshNotifyWindows(t *testing.T) {
 		extraKeyQuotaRefreshNotifyWindows: []string{"seven_day"},
 	}}
 	require.Equal(t, []string{"seven_day"}, a2.GetQuotaRefreshNotifyWindows())
-}
-
-func TestIsQuotaRefreshWindowSelected(t *testing.T) {
-	assert.True(t, isQuotaRefreshWindowSelected("five_hour", nil))
-	assert.True(t, isQuotaRefreshWindowSelected("five_hour", []string{"five_hour"}))
-	assert.False(t, isQuotaRefreshWindowSelected("seven_day", []string{"five_hour"}))
-	assert.True(t, isQuotaRefreshWindowSelected("antigravity:x", []string{"antigravity"}))
-	assert.False(t, isQuotaRefreshWindowSelected("five_hour", []string{"antigravity"}))
 }

@@ -589,32 +589,6 @@ func filterRefreshedBySelectedWindows(refreshed []refreshedWindow, selected []st
 	return out
 }
 
-// isQuotaRefreshWindowSelected 判断单个窗口 key 是否在选中列表中。
-func isQuotaRefreshWindowSelected(windowKey string, selected []string) bool {
-	if len(selected) == 0 {
-		return true
-	}
-	for _, k := range selected {
-		k = strings.TrimSpace(k)
-		if k == "" {
-			continue
-		}
-		if k == windowKey {
-			return true
-		}
-		if k == QuotaRefreshWindowAntigravityAll && strings.HasPrefix(windowKey, "antigravity:") {
-			return true
-		}
-	}
-	// 若 selected 全是空白，视为未限制
-	for _, k := range selected {
-		if strings.TrimSpace(k) != "" {
-			return false
-		}
-	}
-	return true
-}
-
 // isWindowRefreshed 判定单个窗口是否发生「额度刷新」。
 func isWindowRefreshed(oldW, newW usageWindowSnap, now time.Time) bool {
 	// 规则 1：reset 时间滚到明显更晚的新窗口，且用量明显下降
@@ -696,28 +670,6 @@ func snapshotToMap(snap quotaRefreshSnapshot) map[string]any {
 		"sampled_at": snap.SampledAt,
 		"windows":    windows,
 	}
-}
-
-func parseLastNotifiedAt(extra map[string]any) *time.Time {
-	if extra == nil {
-		return nil
-	}
-	raw, ok := extra[extraKeyQuotaRefreshLastNotifiedAt]
-	if !ok {
-		return nil
-	}
-	s, ok := raw.(string)
-	if !ok || s == "" {
-		return nil
-	}
-	t, err := time.Parse(time.RFC3339, s)
-	if err != nil {
-		t, err = time.Parse(time.RFC3339Nano, s)
-		if err != nil {
-			return nil
-		}
-	}
-	return &t
 }
 
 func parseWindowNotifiedAt(extra map[string]any) map[string]time.Time {
@@ -842,17 +794,16 @@ func formatWindowsSummary(windows []refreshedWindow) string {
 }
 
 func formatWindowsSummaryHTML(windows []refreshedWindow) string {
-	var b strings.Builder
-	b.WriteString(`<table style="width:100%;border-collapse:collapse;">`)
+	rows := make([]string, 0, len(windows))
 	for _, w := range windows {
-		b.WriteString(`<tr><td style="padding:6px 0;color:#666;">`)
-		b.WriteString(html.EscapeString(windowLabel(w.Key)))
-		b.WriteString(`</td><td style="padding:6px 0;font-weight:bold;text-align:right;">`)
-		b.WriteString(fmt.Sprintf("%.0f%% → %.0f%%", w.OldUtil, w.NewUtil))
-		b.WriteString(`</td></tr>`)
+		rows = append(rows, fmt.Sprintf(
+			`<tr><td style="padding:6px 0;color:#666;">%s</td><td style="padding:6px 0;font-weight:bold;text-align:right;">%.0f%% → %.0f%%</td></tr>`,
+			html.EscapeString(windowLabel(w.Key)),
+			w.OldUtil,
+			w.NewUtil,
+		))
 	}
-	b.WriteString(`</table>`)
-	return b.String()
+	return `<table style="width:100%;border-collapse:collapse;">` + strings.Join(rows, "") + `</table>`
 }
 
 const quotaRefreshEmailTemplate = `<!DOCTYPE html>
