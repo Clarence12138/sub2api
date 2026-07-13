@@ -37,3 +37,12 @@ type UserSubscriptionRepository interface {
 
 	BatchUpdateExpiredStatus(ctx context.Context) (int64, error)
 }
+
+// UserSubscriptionBulkResetRepository exposes the set-based operations used by
+// the administrator bulk quota reset flow. It is intentionally separate from
+// UserSubscriptionRepository so narrow test doubles and secondary adapters do
+// not need to implement bulk-only operations.
+type UserSubscriptionBulkResetRepository interface {
+	ListActiveForBulkReset(ctx context.Context, groupIDs, subscriptionIDs []int64, now time.Time) ([]UserSubscription, error)
+	ResetUsageWindowsBulk(ctx context.Context, ids []int64, resetDaily, resetWeekly, resetMonthly bool, activeAt, newWindowStart time.Time) (int, error)
+}

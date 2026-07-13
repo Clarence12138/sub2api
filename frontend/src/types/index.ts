@@ -1723,6 +1723,41 @@ export interface ExtendSubscriptionRequest {
   days: number
 }
 
+export interface SubscriptionQuotaWindows {
+  daily: boolean
+  weekly: boolean
+  monthly: boolean
+}
+
+export interface BulkResetSubscriptionQuotaRequest {
+  target: {
+    group_ids: number[]
+    subscription_ids: number[]
+    excluded_subscription_ids: number[]
+  }
+  windows: SubscriptionQuotaWindows
+}
+
+export interface SubscriptionQuotaResetFailure {
+  subscription_id: number
+  error: string
+}
+
+export interface BulkResetSubscriptionQuotaPreview {
+  total: number
+  valid: number
+  failed: number
+  failures: SubscriptionQuotaResetFailure[]
+}
+
+export interface BulkResetSubscriptionQuotaResult {
+  total: number
+  success: number
+  failed: number
+  success_ids: number[]
+  failures: SubscriptionQuotaResetFailure[]
+}
+
 // ==================== Query Parameters ====================
 
 export interface UserErrorRequest {

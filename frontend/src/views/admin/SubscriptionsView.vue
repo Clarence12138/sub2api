@@ -169,6 +169,37 @@
 
       <!-- Subscriptions Table -->
       <template #table>
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary-200 bg-primary-50 p-3 dark:border-primary-800 dark:bg-primary-900/20">
+          <div class="flex flex-wrap items-center gap-3">
+            <span class="text-sm font-medium text-primary-900 dark:text-primary-100">
+              {{ t('admin.subscriptions.bulk.selectionSummary', { groups: selectedGroupIds.length, subscriptions: selectedSubscriptionIds.length, excluded: excludedSubscriptionIds.length }) }}
+            </span>
+            <span v-if="previewLoading" class="text-xs text-primary-700 dark:text-primary-300">
+              {{ t('admin.subscriptions.bulk.previewLoading') }}
+            </span>
+            <span v-else-if="bulkPreview" class="rounded-full bg-primary-100 px-2 py-0.5 text-xs font-medium text-primary-800 dark:bg-primary-900/40 dark:text-primary-200">
+              {{ t('admin.subscriptions.bulk.actualSelectionCount', { count: bulkPreview.valid }) }}
+            </span>
+            <div class="relative" ref="groupSelectionDropdownRef">
+              <button type="button" data-test="group-select-open" class="btn btn-secondary btn-sm" @click="showGroupSelectionDropdown = !showGroupSelectionDropdown">
+                {{ t('admin.subscriptions.bulk.selectGroups') }}
+              </button>
+              <div v-if="showGroupSelectionDropdown" class="absolute left-0 z-50 mt-1 max-h-72 w-64 overflow-y-auto rounded-lg border border-gray-200 bg-white p-2 shadow-lg dark:border-dark-600 dark:bg-dark-800">
+                <label v-for="group in selectableSubscriptionGroups" :key="group.id" class="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm hover:bg-gray-50 dark:hover:bg-dark-700">
+                <input type="checkbox" :data-test="`group-select-${group.id}`" :checked="selectedGroupIds.includes(group.id)" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500" @change="toggleSelectedGroup(group.id)" />
+                  <GroupBadge :name="group.name" :platform="group.platform" :subscription-type="group.subscription_type" :rate-multiplier="group.rate_multiplier" :show-rate="false" />
+                </label>
+                <p v-if="selectableSubscriptionGroups.length === 0" class="px-2 py-3 text-sm text-gray-500">{{ t('common.noData') }}</p>
+              </div>
+            </div>
+            <button v-if="hasBulkSelection" type="button" class="text-xs font-medium text-primary-700 hover:text-primary-900 dark:text-primary-300" @click="clearBulkSelection">
+              {{ t('admin.subscriptions.bulk.clearSelection') }}
+            </button>
+          </div>
+          <button type="button" data-test="bulk-reset-open" class="btn btn-primary btn-sm" :disabled="!hasBulkSelection" @click="openBulkResetDialog">
+            {{ t('admin.subscriptions.bulk.resetSelected') }}
+          </button>
+        </div>
         <DataTable
           :columns="columns"
           :data="subscriptions"
@@ -178,6 +209,13 @@
           default-sort-order="desc"
           @sort="handleSort"
         >
+          <template #header-select>
+            <input type="checkbox" :checked="allVisibleSelected" class="h-4 w-4 cursor-pointer rounded border-gray-300 text-primary-600 focus:ring-primary-500" @click.stop @change="toggleAllVisible" />
+          </template>
+
+          <template #cell-select="{ row }">
+            <input v-if="row.status === 'active'" type="checkbox" :data-test="`subscription-select-${row.id}`" :checked="isSubscriptionSelected(row)" class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" @change="toggleSubscriptionSelection(row)" />
+          </template>
           <template #cell-user="{ row }">
             <div class="flex items-center gap-2">
               <div
@@ -664,16 +702,47 @@
       @cancel="showRestoreDialog = false"
     />
 
-    <!-- Reset Quota Confirmation Dialog -->
-    <ConfirmDialog
-      :show="showResetQuotaConfirm"
-      :title="t('admin.subscriptions.resetQuotaTitle')"
-      :message="t('admin.subscriptions.resetQuotaConfirm', { user: resettingSubscription?.user?.email })"
-      :confirm-text="t('admin.subscriptions.resetQuota')"
-      :cancel-text="t('common.cancel')"
-      @confirm="confirmResetQuota"
-      @cancel="showResetQuotaConfirm = false"
-    />
+    <!-- Reset Quota Dialog (single and bulk) -->
+    <BaseDialog :show="showResetQuotaConfirm" :title="t('admin.subscriptions.resetQuotaTitle')" width="narrow" @close="closeResetQuotaDialog">
+      <div class="space-y-4">
+        <p class="text-sm text-gray-600 dark:text-gray-300">
+          {{ resetDialogMode === 'single'
+            ? t('admin.subscriptions.resetQuotaChooseWindows', { user: resettingSubscription?.user?.email })
+            : t('admin.subscriptions.bulk.confirmHint') }}
+        </p>
+        <div class="space-y-2 rounded-lg border border-gray-200 p-3 dark:border-dark-600">
+          <label v-for="window in quotaWindowOptions" :key="window.key" class="flex cursor-pointer items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+            <input v-model="resetWindows[window.key]" type="checkbox" :data-test="`reset-window-${window.key}`" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500" @change="handleResetWindowsChange" />
+            {{ window.label }}
+          </label>
+        </div>
+        <p v-if="!hasSelectedResetWindow" class="text-sm text-red-600 dark:text-red-400">{{ t('admin.subscriptions.selectAtLeastOneWindow') }}</p>
+        <div v-if="resetDialogMode === 'bulk'" class="rounded-lg bg-gray-50 p-3 text-sm dark:bg-dark-700">
+          <p v-if="previewLoading" class="text-gray-500">{{ t('admin.subscriptions.bulk.previewLoading') }}</p>
+          <template v-else-if="bulkPreview">
+            <p class="font-medium text-gray-900 dark:text-white">{{ t('admin.subscriptions.bulk.previewSummary', { total: bulkPreview.total, valid: bulkPreview.valid, failed: bulkPreview.failed }) }}</p>
+            <ul v-if="bulkPreview.failures.length" class="mt-2 max-h-28 space-y-1 overflow-y-auto text-xs text-red-600 dark:text-red-400">
+              <li v-for="failure in bulkPreview.failures" :key="failure.subscription_id">#{{ failure.subscription_id }}: {{ failure.error }}</li>
+            </ul>
+          </template>
+          <p v-else class="text-red-600 dark:text-red-400">{{ previewError }}</p>
+        </div>
+        <div v-if="bulkExecutionFailures.length" class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+          <p class="font-medium">{{ t('admin.subscriptions.bulk.failureTitle') }}</p>
+          <ul class="mt-2 max-h-32 space-y-1 overflow-y-auto text-xs">
+            <li v-for="failure in bulkExecutionFailures" :key="failure.subscription_id">#{{ failure.subscription_id }}: {{ failure.error }}</li>
+          </ul>
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <button type="button" class="btn btn-secondary" @click="closeResetQuotaDialog">{{ t('common.cancel') }}</button>
+          <button type="button" data-test="reset-confirm" class="btn btn-primary" :disabled="resettingQuota || !hasSelectedResetWindow || (resetDialogMode === 'bulk' && (previewLoading || !bulkPreview || bulkPreview.valid === 0))" @click="confirmResetQuota">
+            {{ resettingQuota ? t('common.loading') : t('admin.subscriptions.resetQuota') }}
+          </button>
+        </div>
+      </template>
+    </BaseDialog>
     <!-- Subscription Guide Modal -->
     <teleport to="body">
       <transition name="modal">
@@ -757,15 +826,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
-import type { UserSubscription, Group, GroupPlatform, SubscriptionType } from '@/types'
+import type { UserSubscription, Group, GroupPlatform, SubscriptionType, SubscriptionQuotaWindows, BulkResetSubscriptionQuotaPreview, SubscriptionQuotaResetFailure } from '@/types'
 import type { SimpleUser } from '@/api/admin/usage'
 import type { Column } from '@/components/common/types'
 import { formatDateOnly } from '@/utils/format'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
+import { useTableSelection } from '@/composables/useTableSelection'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
@@ -830,6 +900,7 @@ const setUserColumnMode = (mode: 'email' | 'username') => {
 
 // All available columns
 const allColumns = computed<Column[]>(() => [
+  { key: 'select', label: '', sortable: false },
   {
     key: 'user',
     label: userColumnMode.value === 'email'
@@ -846,7 +917,7 @@ const allColumns = computed<Column[]>(() => [
 
 // Columns that can be toggled (exclude user and actions which are always visible)
 const toggleableColumns = computed(() =>
-  allColumns.value.filter(col => col.key !== 'user' && col.key !== 'actions')
+  allColumns.value.filter(col => col.key !== 'select' && col.key !== 'user' && col.key !== 'actions')
 )
 
 // Hidden columns set
@@ -899,7 +970,7 @@ const isColumnVisible = (key: string) => !hiddenColumns.has(key)
 // Filtered columns for display
 const columns = computed<Column[]>(() =>
   allColumns.value.filter(col =>
-    col.key === 'user' || col.key === 'actions' || !hiddenColumns.has(col.key)
+    col.key === 'select' || col.key === 'user' || col.key === 'actions' || !hiddenColumns.has(col.key)
   )
 )
 
@@ -919,6 +990,111 @@ const subscriptions = ref<UserSubscription[]>([])
 const groups = ref<Group[]>([])
 const loading = ref(false)
 let abortController: AbortController | null = null
+
+const {
+  selectedIds: selectedSubscriptionIds,
+  isSelected: isManuallySelected,
+  select: selectSubscription,
+  deselect: deselectSubscription,
+  clear: clearManualSelection,
+  setSelectedIds
+} = useTableSelection<UserSubscription>({
+  rows: subscriptions,
+  getId: (subscription) => subscription.id
+})
+const selectedGroupIds = ref<number[]>([])
+const excludedSubscriptionIds = ref<number[]>([])
+const excludedSubscriptionGroupIds = new Map<number, number>()
+const knownSubscriptions = new Map<number, UserSubscription>()
+const showGroupSelectionDropdown = ref(false)
+const groupSelectionDropdownRef = ref<HTMLElement | null>(null)
+
+const selectableSubscriptionGroups = computed(() =>
+  groups.value.filter((group) => group.subscription_type === 'subscription' && group.status === 'active')
+)
+const hasBulkSelection = computed(() =>
+  selectedSubscriptionIds.value.length > 0 || selectedGroupIds.value.length > 0
+)
+
+const isCoveredBySelectedGroup = (subscription: UserSubscription) =>
+  selectedGroupIds.value.includes(subscription.group_id)
+
+const isSubscriptionSelected = (subscription: UserSubscription) => {
+  if (subscription.status !== 'active') return false
+  if (isCoveredBySelectedGroup(subscription)) {
+    return !excludedSubscriptionIds.value.includes(subscription.id)
+  }
+  return isManuallySelected(subscription.id)
+}
+
+const activeVisibleSubscriptions = computed(() =>
+  subscriptions.value.filter((subscription) => subscription.status === 'active')
+)
+const allVisibleSelected = computed(() =>
+  activeVisibleSubscriptions.value.length > 0 &&
+  activeVisibleSubscriptions.value.every(isSubscriptionSelected)
+)
+
+const rememberSubscriptions = (items: UserSubscription[]) => {
+  items.forEach((subscription) => knownSubscriptions.set(subscription.id, subscription))
+}
+
+const replaceExcludedIds = (ids: number[]) => {
+  excludedSubscriptionIds.value = [...new Set(ids)]
+}
+
+const toggleSubscriptionSelection = (subscription: UserSubscription) => {
+  if (subscription.status !== 'active') return
+  knownSubscriptions.set(subscription.id, subscription)
+  if (isCoveredBySelectedGroup(subscription)) {
+    const next = new Set(excludedSubscriptionIds.value)
+    if (next.has(subscription.id)) {
+      next.delete(subscription.id)
+      excludedSubscriptionGroupIds.delete(subscription.id)
+    } else {
+      next.add(subscription.id)
+      excludedSubscriptionGroupIds.set(subscription.id, subscription.group_id)
+    }
+    replaceExcludedIds([...next])
+    return
+  }
+  if (isManuallySelected(subscription.id)) deselectSubscription(subscription.id)
+  else selectSubscription(subscription.id)
+}
+
+const setVisibleSelection = (checked: boolean) => {
+  activeVisibleSubscriptions.value.forEach((subscription) => {
+    const selected = isSubscriptionSelected(subscription)
+    if (selected !== checked) toggleSubscriptionSelection(subscription)
+  })
+}
+
+const toggleAllVisible = (event: Event) => {
+  setVisibleSelection((event.target as HTMLInputElement).checked)
+}
+
+const toggleSelectedGroup = (groupId: number) => {
+  if (selectedGroupIds.value.includes(groupId)) {
+    selectedGroupIds.value = selectedGroupIds.value.filter((id) => id !== groupId)
+    const retainedExclusions = excludedSubscriptionIds.value.filter(
+      (id) => excludedSubscriptionGroupIds.get(id) !== groupId
+    )
+    excludedSubscriptionIds.value
+      .filter((id) => excludedSubscriptionGroupIds.get(id) === groupId)
+      .forEach((id) => excludedSubscriptionGroupIds.delete(id))
+    replaceExcludedIds(retainedExclusions)
+    return
+  }
+  selectedGroupIds.value = [...selectedGroupIds.value, groupId]
+  setSelectedIds(selectedSubscriptionIds.value.filter((id) => knownSubscriptions.get(id)?.group_id !== groupId))
+}
+
+const clearBulkSelection = () => {
+  clearManualSelection()
+  selectedGroupIds.value = []
+  excludedSubscriptionIds.value = []
+  excludedSubscriptionGroupIds.clear()
+}
 
 // Toolbar user filter (fuzzy search -> select user_id)
 const filterUserKeyword = ref('')
@@ -964,6 +1140,13 @@ const showResetQuotaConfirm = ref(false)
 const submitting = ref(false)
 const resettingSubscription = ref<UserSubscription | null>(null)
 const resettingQuota = ref(false)
+const resetDialogMode = ref<'single' | 'bulk'>('single')
+const resetWindows = reactive<SubscriptionQuotaWindows>({ daily: true, weekly: true, monthly: true })
+const bulkPreview = ref<BulkResetSubscriptionQuotaPreview | null>(null)
+const previewLoading = ref(false)
+const previewError = ref('')
+let bulkPreviewRequestId = 0
+const bulkExecutionFailures = ref<SubscriptionQuotaResetFailure[]>([])
 const extendingSubscription = ref<UserSubscription | null>(null)
 const revokingSubscription = ref<UserSubscription | null>(null)
 const restoringSubscription = ref<UserSubscription | null>(null)
@@ -977,6 +1160,88 @@ const assignForm = reactive({
 const extendForm = reactive({
   days: 30
 })
+
+const quotaWindowOptions = computed<Array<{ key: keyof SubscriptionQuotaWindows; label: string }>>(() => [
+  { key: 'daily', label: t('admin.subscriptions.daily') },
+  { key: 'weekly', label: t('admin.subscriptions.weekly') },
+  { key: 'monthly', label: t('admin.subscriptions.monthly') }
+])
+const hasSelectedResetWindow = computed(() =>
+  resetWindows.daily || resetWindows.weekly || resetWindows.monthly
+)
+
+const resetQuotaWindows = () => {
+  resetWindows.daily = true
+  resetWindows.weekly = true
+  resetWindows.monthly = true
+}
+
+const buildBulkResetRequest = () => ({
+  target: {
+    group_ids: [...selectedGroupIds.value],
+    subscription_ids: [...selectedSubscriptionIds.value],
+    excluded_subscription_ids: [...excludedSubscriptionIds.value]
+  },
+  windows: { ...resetWindows }
+})
+
+const loadBulkResetPreview = async () => {
+  const requestId = ++bulkPreviewRequestId
+  if (!hasSelectedResetWindow.value || !hasBulkSelection.value) {
+    bulkPreview.value = null
+    previewLoading.value = false
+    return
+  }
+  previewLoading.value = true
+  previewError.value = ''
+  try {
+    const preview = await adminAPI.subscriptions.previewBulkResetQuota(buildBulkResetRequest())
+    if (requestId !== bulkPreviewRequestId) return
+    bulkPreview.value = preview
+  } catch (error: any) {
+    if (requestId !== bulkPreviewRequestId) return
+    bulkPreview.value = null
+    previewError.value = error.response?.data?.detail || t('admin.subscriptions.bulk.previewFailed')
+    console.error('Error previewing bulk subscription quota reset:', error)
+  } finally {
+    if (requestId === bulkPreviewRequestId) previewLoading.value = false
+  }
+}
+
+watch(
+  [
+    () => [...selectedGroupIds.value],
+    () => [...selectedSubscriptionIds.value],
+    () => [...excludedSubscriptionIds.value]
+  ],
+  () => {
+    loadBulkResetPreview()
+  }
+)
+
+const handleResetWindowsChange = () => {
+  if (resetDialogMode.value === 'bulk') loadBulkResetPreview()
+}
+
+const openBulkResetDialog = () => {
+  if (!hasBulkSelection.value) return
+  resetDialogMode.value = 'bulk'
+  resettingSubscription.value = null
+  bulkExecutionFailures.value = []
+  resetQuotaWindows()
+  showResetQuotaConfirm.value = true
+  loadBulkResetPreview()
+}
+
+const closeResetQuotaDialog = () => {
+  bulkPreviewRequestId += 1
+  showResetQuotaConfirm.value = false
+  resettingSubscription.value = null
+  bulkPreview.value = null
+  previewLoading.value = false
+  previewError.value = ''
+  bulkExecutionFailures.value = []
+}
 
 // Group options for filter (all groups)
 const groupOptions = computed(() => [
@@ -1038,6 +1303,7 @@ const loadSubscriptions = async () => {
     )
     if (signal.aborted || abortController !== requestController) return
     subscriptions.value = response.items
+    rememberSubscriptions(response.items)
     pagination.total = response.total
     pagination.pages = response.pages
   } catch (error: any) {
@@ -1303,19 +1569,42 @@ const confirmRestore = async () => {
 }
 
 const handleResetQuota = (subscription: UserSubscription) => {
+  resetDialogMode.value = 'single'
   resettingSubscription.value = subscription
+  bulkExecutionFailures.value = []
+  resetQuotaWindows()
   showResetQuotaConfirm.value = true
 }
 
 const confirmResetQuota = async () => {
-  if (!resettingSubscription.value) return
+  if (!hasSelectedResetWindow.value) return
   if (resettingQuota.value) return
   resettingQuota.value = true
   try {
-    await adminAPI.subscriptions.resetQuota(resettingSubscription.value.id, { daily: true, weekly: true, monthly: true })
-    appStore.showSuccess(t('admin.subscriptions.quotaResetSuccess'))
-    showResetQuotaConfirm.value = false
-    resettingSubscription.value = null
+    if (resetDialogMode.value === 'single') {
+      if (!resettingSubscription.value) return
+      await adminAPI.subscriptions.resetQuota(resettingSubscription.value.id, { ...resetWindows })
+      appStore.showSuccess(t('admin.subscriptions.quotaResetSuccess'))
+      closeResetQuotaDialog()
+      await loadSubscriptions()
+      return
+    }
+
+    const result = await adminAPI.subscriptions.bulkResetQuota(buildBulkResetRequest())
+    bulkExecutionFailures.value = result.failures
+    if (result.failed === 0) {
+      appStore.showSuccess(t('admin.subscriptions.bulk.resetSuccess', { count: result.success }))
+      clearBulkSelection()
+      closeResetQuotaDialog()
+    } else {
+      setSelectedIds(result.failures.map((failure) => failure.subscription_id))
+      selectedGroupIds.value = []
+      excludedSubscriptionIds.value = []
+      excludedSubscriptionGroupIds.clear()
+      bulkPreview.value = null
+      appStore.showError(t('admin.subscriptions.bulk.partialFailure', { success: result.success, failed: result.failed }))
+      await loadBulkResetPreview()
+    }
     await loadSubscriptions()
   } catch (error: any) {
     appStore.showError(error.response?.data?.detail || t('admin.subscriptions.failedToResetQuota'))
@@ -1421,6 +1710,9 @@ const handleClickOutside = (event: MouseEvent) => {
   if (!target.closest('[data-filter-user-search]')) showFilterUserDropdown.value = false
   if (columnDropdownRef.value && !columnDropdownRef.value.contains(target)) {
     showColumnDropdown.value = false
+  }
+  if (groupSelectionDropdownRef.value && !groupSelectionDropdownRef.value.contains(target)) {
+    showGroupSelectionDropdown.value = false
   }
 }
 

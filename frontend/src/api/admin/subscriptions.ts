@@ -9,6 +9,9 @@ import type {
   SubscriptionProgress,
   AssignSubscriptionRequest,
   BulkAssignSubscriptionRequest,
+  BulkResetSubscriptionQuotaPreview,
+  BulkResetSubscriptionQuotaRequest,
+  BulkResetSubscriptionQuotaResult,
   ExtendSubscriptionRequest,
   PaginatedResponse
 } from '@/types'
@@ -148,6 +151,26 @@ export async function resetQuota(
   return data
 }
 
+export async function previewBulkResetQuota(
+  request: BulkResetSubscriptionQuotaRequest
+): Promise<BulkResetSubscriptionQuotaPreview> {
+  const { data } = await apiClient.post<BulkResetSubscriptionQuotaPreview>(
+    '/admin/subscriptions/bulk-reset-quota/preview',
+    request
+  )
+  return data
+}
+
+export async function bulkResetQuota(
+  request: BulkResetSubscriptionQuotaRequest
+): Promise<BulkResetSubscriptionQuotaResult> {
+  const { data } = await apiClient.post<BulkResetSubscriptionQuotaResult>(
+    '/admin/subscriptions/bulk-reset-quota',
+    request
+  )
+  return data
+}
+
 /**
  * List subscriptions by group
  * @param groupId - Group ID
@@ -200,6 +223,8 @@ export const subscriptionsAPI = {
   revoke,
   restore,
   resetQuota,
+  previewBulkResetQuota,
+  bulkResetQuota,
   listByGroup,
   listByUser
 }

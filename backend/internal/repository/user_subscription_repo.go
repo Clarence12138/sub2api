@@ -18,6 +18,8 @@ type userSubscriptionRepository struct {
 	client *dbent.Client
 }
 
+const subscriptionBulkResetBatchSize = 1000
+
 func NewUserSubscriptionRepository(client *dbent.Client) service.UserSubscriptionRepository {
 	return &userSubscriptionRepository{client: client}
 }
@@ -380,6 +382,86 @@ func (r *userSubscriptionRepository) ResetUsageWindows(ctx context.Context, id i
 	}
 	_, err := update.Save(ctx)
 	return translatePersistenceError(err, service.ErrSubscriptionNotFound, nil)
+}
+
+func (r *userSubscriptionRepository) ListActiveForBulkReset(ctx context.Context, groupIDs, subscriptionIDs []int64, now time.Time) ([]service.UserSubscription, error) {
+	if len(groupIDs) == 0 && len(subscriptionIDs) == 0 {
+		return []service.UserSubscription{}, nil
+	}
+	client := clientFromContext(ctx, r.client)
+	rowsByID := make(map[int64]*dbent.UserSubscription)
+	load := func(target predicate.UserSubscription) error {
+		rows, err := client.UserSubscription.Query().Where(
+			target,
+			usersubscription.StatusEQ(service.SubscriptionStatusActive),
+			usersubscription.ExpiresAtGT(now),
+		).All(ctx)
+		if err != nil {
+			return err
+		}
+		for _, row := range rows {
+			rowsByID[row.ID] = row
+		}
+		return nil
+	}
+	if err := forEachIDBatch(groupIDs, func(ids []int64) error { return load(usersubscription.GroupIDIn(ids...)) }); err != nil {
+		return nil, err
+	}
+	if err := forEachIDBatch(subscriptionIDs, func(ids []int64) error { return load(usersubscription.IDIn(ids...)) }); err != nil {
+		return nil, err
+	}
+	rows := make([]*dbent.UserSubscription, 0, len(rowsByID))
+	for _, row := range rowsByID {
+		rows = append(rows, row)
+	}
+	return userSubscriptionEntitiesToService(rows), nil
+}
+
+func (r *userSubscriptionRepository) ResetUsageWindowsBulk(
+	ctx context.Context,
+	ids []int64,
+	resetDaily, resetWeekly, resetMonthly bool,
+	activeAt, newWindowStart time.Time,
+) (int, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	client := clientFromContext(ctx, r.client)
+	total := 0
+	err := forEachIDBatch(ids, func(batch []int64) error {
+		update := client.UserSubscription.Update().Where(
+			usersubscription.IDIn(batch...),
+			usersubscription.StatusEQ(service.SubscriptionStatusActive),
+			usersubscription.ExpiresAtGT(activeAt),
+		)
+		if resetDaily {
+			update.SetDailyUsageUsd(0).SetDailyWindowStart(newWindowStart)
+		}
+		if resetWeekly {
+			update.SetWeeklyUsageUsd(0).SetWeeklyWindowStart(newWindowStart)
+		}
+		if resetMonthly {
+			update.SetMonthlyUsageUsd(0).SetMonthlyWindowStart(newWindowStart)
+		}
+		affected, saveErr := update.Save(ctx)
+		total += affected
+		return saveErr
+	})
+	return total, err
+}
+
+func forEachIDBatch(ids []int64, fn func([]int64) error) error {
+	for start := 0; start < len(ids); start += subscriptionBulkResetBatchSize {
+		end := start + subscriptionBulkResetBatchSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+		if err := fn(ids[start:end]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *userSubscriptionRepository) ResetDailyUsage(ctx context.Context, id int64, expectedWindowStart *time.Time, newWindowStart time.Time) error {

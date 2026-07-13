@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand/v2"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -34,12 +35,60 @@ var (
 	ErrSubscriptionRestoreConflict = infraerrors.Conflict("SUBSCRIPTION_RESTORE_CONFLICT", "subscription already exists for this user and group")
 	ErrGroupNotSubscriptionType    = infraerrors.BadRequest("GROUP_NOT_SUBSCRIPTION_TYPE", "group is not a subscription type")
 	ErrInvalidInput                = infraerrors.BadRequest("INVALID_INPUT", "at least one of resetDaily, resetWeekly, or resetMonthly must be true")
+	ErrBulkResetTargetRequired     = infraerrors.BadRequest("BULK_RESET_TARGET_REQUIRED", "at least one group_id or subscription_id is required")
+	ErrBulkResetInvalidID          = infraerrors.BadRequest("BULK_RESET_INVALID_ID", "group, subscription, and exclusion IDs must be positive")
 	ErrDailyLimitExceeded          = infraerrors.TooManyRequests("DAILY_LIMIT_EXCEEDED", "daily usage limit exceeded")
 	ErrWeeklyLimitExceeded         = infraerrors.TooManyRequests("WEEKLY_LIMIT_EXCEEDED", "weekly usage limit exceeded")
 	ErrMonthlyLimitExceeded        = infraerrors.TooManyRequests("MONTHLY_LIMIT_EXCEEDED", "monthly usage limit exceeded")
 	ErrSubscriptionNilInput        = infraerrors.BadRequest("SUBSCRIPTION_NIL_INPUT", "subscription input cannot be nil")
 	ErrAdjustWouldExpire           = infraerrors.BadRequest("ADJUST_WOULD_EXPIRE", "adjustment would result in expired subscription (remaining days must be > 0)")
 )
+
+type BulkResetQuotaTarget struct {
+	GroupIDs                []int64 `json:"group_ids"`
+	SubscriptionIDs         []int64 `json:"subscription_ids"`
+	ExcludedSubscriptionIDs []int64 `json:"excluded_subscription_ids"`
+}
+
+type QuotaResetWindows struct {
+	Daily   bool `json:"daily"`
+	Weekly  bool `json:"weekly"`
+	Monthly bool `json:"monthly"`
+}
+
+func (w QuotaResetWindows) Any() bool {
+	return w.Daily || w.Weekly || w.Monthly
+}
+
+type BulkResetQuotaInput struct {
+	Target  BulkResetQuotaTarget `json:"target"`
+	Windows QuotaResetWindows    `json:"windows"`
+}
+
+type BulkResetQuotaFailure struct {
+	SubscriptionID int64  `json:"subscription_id"`
+	Error          string `json:"error"`
+}
+
+type BulkResetQuotaPreview struct {
+	Total    int                     `json:"total"`
+	Valid    int                     `json:"valid"`
+	Failed   int                     `json:"failed"`
+	Failures []BulkResetQuotaFailure `json:"failures"`
+}
+
+type BulkResetQuotaResult struct {
+	Total      int                     `json:"total"`
+	Success    int                     `json:"success"`
+	Failed     int                     `json:"failed"`
+	SuccessIDs []int64                 `json:"success_ids"`
+	Failures   []BulkResetQuotaFailure `json:"failures"`
+}
+
+type bulkResetQuotaResolution struct {
+	Targets  []UserSubscription
+	Failures []BulkResetQuotaFailure
+}
 
 // SubscriptionService 订阅服务
 type SubscriptionService struct {
@@ -835,7 +884,8 @@ func (s *SubscriptionService) CheckAndActivateWindow(ctx context.Context, sub *U
 // AdminResetQuota manually resets the daily, weekly, and/or monthly usage windows.
 // Uses startOfDay(now) as the new window start, matching automatic resets.
 func (s *SubscriptionService) AdminResetQuota(ctx context.Context, subscriptionID int64, resetDaily, resetWeekly, resetMonthly bool) (*UserSubscription, error) {
-	if !resetDaily && !resetWeekly && !resetMonthly {
+	windows := QuotaResetWindows{Daily: resetDaily, Weekly: resetWeekly, Monthly: resetMonthly}
+	if !windows.Any() {
 		return nil, ErrInvalidInput
 	}
 	sub, err := s.userSubRepo.GetByID(ctx, subscriptionID)
@@ -849,12 +899,193 @@ func (s *SubscriptionService) AdminResetQuota(ctx context.Context, subscriptionI
 	// Invalidate L1 ristretto cache. Ristretto's Del() is asynchronous by design,
 	// so call Wait() immediately after to flush pending operations and guarantee
 	// the deleted key is not returned on the very next Get() call.
-	s.InvalidateSubCacheSync(sub.UserID, sub.GroupID)
-	if s.billingCacheService != nil {
-		_ = s.billingCacheService.InvalidateSubscription(ctx, sub.UserID, sub.GroupID)
+	if err := s.invalidateSubscriptionCaches(sub.UserID, sub.GroupID); err != nil {
+		return nil, err
 	}
 	// Return the refreshed subscription from DB
 	return s.userSubRepo.GetByID(ctx, subscriptionID)
+}
+
+func (s *SubscriptionService) PreviewBulkResetQuota(ctx context.Context, input *BulkResetQuotaInput) (*BulkResetQuotaPreview, error) {
+	normalized, err := s.validateBulkResetQuotaInput(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	repo, err := s.bulkResetRepository()
+	if err != nil {
+		return nil, err
+	}
+	resolution, err := resolveBulkResetQuota(ctx, repo, normalized, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	return &BulkResetQuotaPreview{
+		Total: len(resolution.Targets) + len(resolution.Failures), Valid: len(resolution.Targets),
+		Failed: len(resolution.Failures), Failures: resolution.Failures,
+	}, nil
+}
+
+func (s *SubscriptionService) BulkResetQuota(ctx context.Context, input *BulkResetQuotaInput) (*BulkResetQuotaResult, error) {
+	normalized, err := s.validateBulkResetQuotaInput(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	repo, err := s.bulkResetRepository()
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	var resolution *bulkResetQuotaResolution
+	err = s.withSubscriptionUpdateTx(ctx, func(txCtx context.Context) error {
+		var resolveErr error
+		resolution, resolveErr = resolveBulkResetQuota(txCtx, repo, normalized, now)
+		if resolveErr != nil || len(resolution.Targets) == 0 {
+			return resolveErr
+		}
+		ids := subscriptionIDs(resolution.Targets)
+		affected, resetErr := repo.ResetUsageWindowsBulk(txCtx, ids, normalized.Windows.Daily, normalized.Windows.Weekly, normalized.Windows.Monthly, now, startOfDay(now))
+		if resetErr != nil {
+			return resetErr
+		}
+		if affected != len(ids) {
+			return fmt.Errorf("bulk reset target changed during execution: expected %d rows, updated %d", len(ids), affected)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.buildBulkResetQuotaResult(resolution), nil
+}
+
+func (s *SubscriptionService) buildBulkResetQuotaResult(resolution *bulkResetQuotaResolution) *BulkResetQuotaResult {
+	result := &BulkResetQuotaResult{
+		SuccessIDs: make([]int64, 0, len(resolution.Targets)),
+		Failures:   append(make([]BulkResetQuotaFailure, 0, len(resolution.Failures)), resolution.Failures...),
+	}
+	result.Total = len(resolution.Targets) + len(result.Failures)
+	for i := range resolution.Targets {
+		target := &resolution.Targets[i]
+		if err := s.invalidateSubscriptionCaches(target.UserID, target.GroupID); err != nil {
+			result.Failures = append(result.Failures, BulkResetQuotaFailure{SubscriptionID: target.ID, Error: err.Error()})
+			continue
+		}
+		result.SuccessIDs = append(result.SuccessIDs, target.ID)
+	}
+	result.Success = len(result.SuccessIDs)
+	result.Failed = len(result.Failures)
+	return result
+}
+
+func (s *SubscriptionService) validateBulkResetQuotaInput(ctx context.Context, input *BulkResetQuotaInput) (*BulkResetQuotaInput, error) {
+	if input == nil || (!input.Windows.Any()) {
+		return nil, ErrInvalidInput
+	}
+	normalized, err := normalizeBulkResetQuotaInput(input)
+	if err != nil {
+		return nil, err
+	}
+	if len(normalized.Target.GroupIDs) == 0 && len(normalized.Target.SubscriptionIDs) == 0 {
+		return nil, ErrBulkResetTargetRequired
+	}
+	for _, groupID := range normalized.Target.GroupIDs {
+		group, getErr := s.groupRepo.GetByID(ctx, groupID)
+		if getErr != nil {
+			return nil, getErr
+		}
+		if !group.IsSubscriptionType() {
+			return nil, ErrGroupNotSubscriptionType
+		}
+	}
+	return normalized, nil
+}
+
+func (s *SubscriptionService) bulkResetRepository() (UserSubscriptionBulkResetRepository, error) {
+	repo, ok := s.userSubRepo.(UserSubscriptionBulkResetRepository)
+	if !ok {
+		return nil, fmt.Errorf("user subscription repository does not support bulk quota reset")
+	}
+	return repo, nil
+}
+
+func normalizeBulkResetQuotaInput(input *BulkResetQuotaInput) (*BulkResetQuotaInput, error) {
+	groupIDs, err := uniquePositiveIDs(input.Target.GroupIDs)
+	if err != nil {
+		return nil, err
+	}
+	subscriptionIDs, err := uniquePositiveIDs(input.Target.SubscriptionIDs)
+	if err != nil {
+		return nil, err
+	}
+	excludedIDs, err := uniquePositiveIDs(input.Target.ExcludedSubscriptionIDs)
+	if err != nil {
+		return nil, err
+	}
+	return &BulkResetQuotaInput{Target: BulkResetQuotaTarget{
+		GroupIDs: groupIDs, SubscriptionIDs: subscriptionIDs, ExcludedSubscriptionIDs: excludedIDs,
+	}, Windows: input.Windows}, nil
+}
+
+func uniquePositiveIDs(ids []int64) ([]int64, error) {
+	seen := make(map[int64]struct{}, len(ids))
+	result := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			return nil, ErrBulkResetInvalidID
+		}
+		if _, exists := seen[id]; !exists {
+			seen[id] = struct{}{}
+			result = append(result, id)
+		}
+	}
+	return result, nil
+}
+
+func resolveBulkResetQuota(ctx context.Context, repo UserSubscriptionBulkResetRepository, input *BulkResetQuotaInput, now time.Time) (*bulkResetQuotaResolution, error) {
+	rows, err := repo.ListActiveForBulkReset(ctx, input.Target.GroupIDs, input.Target.SubscriptionIDs, now)
+	if err != nil {
+		return nil, err
+	}
+	excluded := idSet(input.Target.ExcludedSubscriptionIDs)
+	activeByID := make(map[int64]UserSubscription, len(rows))
+	for i := range rows {
+		if _, skip := excluded[rows[i].ID]; !skip {
+			activeByID[rows[i].ID] = rows[i]
+		}
+	}
+	resolution := &bulkResetQuotaResolution{Targets: make([]UserSubscription, 0, len(activeByID)), Failures: []BulkResetQuotaFailure{}}
+	for _, sub := range activeByID {
+		resolution.Targets = append(resolution.Targets, sub)
+	}
+	for _, id := range input.Target.SubscriptionIDs {
+		if _, skip := excluded[id]; skip {
+			continue
+		}
+		if _, valid := activeByID[id]; !valid {
+			resolution.Failures = append(resolution.Failures, BulkResetQuotaFailure{SubscriptionID: id, Error: "subscription is not active, has expired, or does not exist"})
+		}
+	}
+	sort.Slice(resolution.Targets, func(i, j int) bool { return resolution.Targets[i].ID < resolution.Targets[j].ID })
+	sort.Slice(resolution.Failures, func(i, j int) bool {
+		return resolution.Failures[i].SubscriptionID < resolution.Failures[j].SubscriptionID
+	})
+	return resolution, nil
+}
+
+func idSet(ids []int64) map[int64]struct{} {
+	result := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		result[id] = struct{}{}
+	}
+	return result
+}
+
+func subscriptionIDs(subscriptions []UserSubscription) []int64 {
+	ids := make([]int64, len(subscriptions))
+	for i := range subscriptions {
+		ids[i] = subscriptions[i].ID
+	}
+	return ids
 }
 
 // CheckAndResetWindows 检查并重置过期的窗口
