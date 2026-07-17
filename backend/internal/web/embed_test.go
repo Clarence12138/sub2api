@@ -5,8 +5,11 @@ package web
 import (
 	"bytes"
 	"context"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -440,6 +443,37 @@ func TestFrontendServer_InvalidateCache(t *testing.T) {
 	})
 }
 
+func TestOverrideFilesNeverReceiveImmutableCacheHeaders(t *testing.T) {
+	t.Parallel()
+
+	overrideDir := t.TempDir()
+	cleanPath := "assets/index-AbCd1234.js"
+	filePath := filepath.Join(overrideDir, cleanPath)
+	require.NoError(t, os.MkdirAll(filepath.Dir(filePath), 0o755))
+	require.NoError(t, os.WriteFile(filePath, []byte("override"), 0o644))
+
+	t.Run("frontend_server_override", func(t *testing.T) {
+		t.Parallel()
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/"+cleanPath, nil)
+
+		server := &FrontendServer{overrideDir: overrideDir}
+		assert.True(t, server.tryServeOverride(c, cleanPath))
+		assert.Empty(t, w.Header().Get("Cache-Control"))
+	})
+
+	t.Run("legacy_override", func(t *testing.T) {
+		t.Parallel()
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/"+cleanPath, nil)
+
+		assert.True(t, tryServeOverrideFile(c, overrideDir, cleanPath))
+		assert.Empty(t, w.Header().Get("Cache-Control"))
+	})
+}
+
 func TestFrontendServer_Middleware(t *testing.T) {
 	t.Run("skips_api_routes", func(t *testing.T) {
 		provider := &mockSettingsProvider{
@@ -451,6 +485,7 @@ func TestFrontendServer_Middleware(t *testing.T) {
 
 		apiPaths := []string{
 			"/api/v1/users",
+			"/models",
 			"/v1/models",
 			"/v1beta/chat",
 			"/backend-api/codex/responses",
@@ -507,6 +542,32 @@ func TestFrontendServer_Middleware(t *testing.T) {
 		assert.JSONEq(t, `{"ok":true}`, w.Body.String())
 	})
 
+	t.Run("skips_alpha_search_post_route", func(t *testing.T) {
+		provider := &mockSettingsProvider{
+			settings: map[string]string{"test": "value"},
+		}
+
+		server, err := NewFrontendServer(provider)
+		require.NoError(t, err)
+
+		router := gin.New()
+		router.Use(server.Middleware())
+		nextCalled := false
+		router.POST("/alpha/search", func(c *gin.Context) {
+			nextCalled = true
+			c.JSON(http.StatusOK, gin.H{"ok": true})
+		})
+
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/alpha/search", strings.NewReader(`{"model":"gpt-5.6-sol"}`))
+		req.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(w, req)
+
+		assert.True(t, nextCalled, "next handler should be called for alpha search API route")
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.JSONEq(t, `{"ok":true}`, w.Body.String())
+	})
+
 	t.Run("serves_index_for_spa_routes", func(t *testing.T) {
 		provider := &mockSettingsProvider{
 			settings: map[string]string{"test": "value"},
@@ -559,7 +620,38 @@ func TestFrontendServer_Middleware(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Contains(t, w.Header().Get("Content-Type"), "image/png")
+		assert.Empty(t, w.Header().Get("Cache-Control"))
+
+		entries, err := fs.ReadDir(server.distFS, "assets")
+		require.NoError(t, err)
+		fingerprintedPath := ""
+		for _, entry := range entries {
+			candidate := "assets/" + entry.Name()
+			if !entry.IsDir() && isFingerprintedEmbeddedAssetPath(candidate) {
+				fingerprintedPath = candidate
+				break
+			}
+		}
+		require.NotEmpty(t, fingerprintedPath)
+
+		assetWriter := httptest.NewRecorder()
+		assetRequest := httptest.NewRequest(http.MethodGet, "/"+fingerprintedPath, nil)
+		router.ServeHTTP(assetWriter, assetRequest)
+
+		assert.Equal(t, http.StatusOK, assetWriter.Code)
+		assert.Equal(t, staticAssetsCacheControl, assetWriter.Header().Get("Cache-Control"))
 	})
+}
+
+func TestEmbeddedFrontendBypassesBareVideoAPIRoutes(t *testing.T) {
+	for _, path := range []string{
+		"/videos/generations",
+		"/videos/edits",
+		"/videos/extensions",
+		"/videos/request-123",
+	} {
+		require.True(t, shouldBypassEmbeddedFrontend(path), "path=%s", path)
+	}
 }
 
 func TestNewFrontendServer(t *testing.T) {
@@ -655,6 +747,7 @@ func TestServeEmbeddedFrontend(t *testing.T) {
 
 		apiPaths := []string{
 			"/api/users",
+			"/models",
 			"/v1/models",
 			"/v1beta/chat",
 			"/backend-api/codex/responses",

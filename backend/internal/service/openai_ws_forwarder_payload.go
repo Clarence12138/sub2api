@@ -15,6 +15,16 @@ import (
 	"github.com/tidwall/sjson"
 )
 
+func validateOpenAIWSBearerToken(account *Account, token string) error {
+	if account == nil {
+		return errors.New("account is nil")
+	}
+	if strings.TrimSpace(token) == "" && !account.IsOpenAIAgentIdentity() {
+		return errors.New("token is empty")
+	}
+	return nil
+}
+
 func (s *OpenAIGatewayService) buildOpenAIResponsesWSURL(account *Account) (string, error) {
 	if account == nil {
 		return "", errors.New("account is nil")
@@ -67,12 +77,19 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	promptCacheKey string,
 ) (http.Header, openAIWSSessionHeaderResolution, error) {
 	headers := make(http.Header)
-	headers.Set("authorization", "Bearer "+token)
+	if account == nil || !account.IsOpenAIAgentIdentity() {
+		headers.Set("authorization", "Bearer "+token)
+	}
 
 	sessionResolution := resolveOpenAIWSSessionHeaders(c, promptCacheKey)
 	if c != nil && c.Request != nil {
 		if v := strings.TrimSpace(c.Request.Header.Get("accept-language")); v != "" {
 			headers.Set("accept-language", v)
+		}
+		for _, value := range c.Request.Header.Values("x-codex-beta-features") {
+			if value = strings.TrimSpace(value); value != "" {
+				headers.Add("x-codex-beta-features", value)
+			}
 		}
 	}
 	// OAuth 账号：将 apiKeyID 混入 session 标识符，防止跨用户会话碰撞。
