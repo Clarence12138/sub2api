@@ -898,10 +898,15 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					)
 				}
 				isRateLimited := isOpenAIWSRateLimitError(errCodeRaw, errTypeRaw, errMsgRaw)
-				if turn == 1 && !delivery.Committed() && isRateLimited {
+				transientStatus := openAIWSPayloadTransientStatus(upstreamMessage)
+				if shouldFailoverOpenAIWSErrorTurn(turn, delivery.Committed(), hooks != nil, isRateLimited, transientStatus) {
 					lease.MarkBroken()
+					statusCode := transientStatus
+					if isRateLimited {
+						statusCode = http.StatusTooManyRequests
+					}
 					return nil, &UpstreamFailoverError{
-						StatusCode:      http.StatusTooManyRequests,
+						StatusCode:      statusCode,
 						ResponseBody:    append([]byte(nil), upstreamMessage...),
 						ResponseHeaders: cloneHeader(lease.HandshakeHeaders()),
 					}

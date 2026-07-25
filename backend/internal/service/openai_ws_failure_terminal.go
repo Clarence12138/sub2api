@@ -79,6 +79,16 @@ func isOpenAIWSFailureTerminalEvent(eventType string) bool {
 	return terminal != "" && !isOpenAIWSSuccessTerminalEvent(terminal)
 }
 
+func shouldFailoverOpenAIWSErrorTurn(turn int, committed, schedulerAvailable, rateLimited bool, transientStatus int) bool {
+	if turn != 1 || committed {
+		return false
+	}
+	if rateLimited {
+		return true
+	}
+	return schedulerAvailable && transientStatus >= 500 && transientStatus <= 599
+}
+
 // isOpenAIWSSemanticOutputEvent reports whether forwarding an event commits
 // observable response content. Preamble and server-side rate-limit metadata can
 // remain buffered so a failed, uncommitted attempt can be replayed invisibly.

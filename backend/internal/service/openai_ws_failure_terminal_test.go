@@ -65,6 +65,15 @@ func TestOpenAIWSSemanticOutputEvent(t *testing.T) {
 	}
 }
 
+func TestShouldFailoverOpenAIWSErrorTurn(t *testing.T) {
+	require.True(t, shouldFailoverOpenAIWSErrorTurn(1, false, true, false, 503))
+	require.True(t, shouldFailoverOpenAIWSErrorTurn(1, false, false, true, 0))
+	require.False(t, shouldFailoverOpenAIWSErrorTurn(2, false, true, true, 429))
+	require.False(t, shouldFailoverOpenAIWSErrorTurn(1, true, true, false, 500))
+	require.False(t, shouldFailoverOpenAIWSErrorTurn(1, false, false, false, 500))
+	require.False(t, shouldFailoverOpenAIWSErrorTurn(1, false, true, false, 400))
+}
+
 func TestWrapOpenAIWSIngressTurnErrorWithDetails(t *testing.T) {
 	cause := errors.New("read failed")
 	err := wrapOpenAIWSIngressTurnErrorWithDetails(
