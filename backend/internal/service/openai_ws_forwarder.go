@@ -45,6 +45,7 @@ const (
 
 	openAIWSIngressStagePreviousResponseNotFound = "previous_response_not_found"
 	openAIWSMaxPrevResponseIDDeletePasses        = 8
+	openAIWSIngressFreshRetryBudget              = 5 * time.Second
 )
 
 var openAIWSLogValueReplacer = strings.NewReplacer(
@@ -94,6 +95,25 @@ type openAIWSIngressTurnError struct {
 	stage           string
 	cause           error
 	wroteDownstream bool
+	responseID      string
+	eventCount      int
+	tokenEventCount int
+	terminalCount   int
+	firstEventType  string
+	lastEventType   string
+	closeStatus     string
+	closeReason     string
+}
+
+type openAIWSIngressTurnErrorDetails struct {
+	ResponseID      string
+	EventCount      int
+	TokenEventCount int
+	TerminalCount   int
+	FirstEventType  string
+	LastEventType   string
+	CloseStatus     string
+	CloseReason     string
 }
 
 func (e *openAIWSIngressTurnError) Error() string {
@@ -114,6 +134,20 @@ func (e *openAIWSIngressTurnError) Unwrap() error {
 }
 
 func wrapOpenAIWSIngressTurnError(stage string, cause error, wroteDownstream bool) error {
+	return wrapOpenAIWSIngressTurnErrorWithDetails(
+		stage,
+		cause,
+		wroteDownstream,
+		openAIWSIngressTurnErrorDetails{},
+	)
+}
+
+func wrapOpenAIWSIngressTurnErrorWithDetails(
+	stage string,
+	cause error,
+	wroteDownstream bool,
+	details openAIWSIngressTurnErrorDetails,
+) error {
 	if cause == nil {
 		return nil
 	}
@@ -121,6 +155,14 @@ func wrapOpenAIWSIngressTurnError(stage string, cause error, wroteDownstream boo
 		stage:           strings.TrimSpace(stage),
 		cause:           cause,
 		wroteDownstream: wroteDownstream,
+		responseID:      strings.TrimSpace(details.ResponseID),
+		eventCount:      details.EventCount,
+		tokenEventCount: details.TokenEventCount,
+		terminalCount:   details.TerminalCount,
+		firstEventType:  strings.TrimSpace(details.FirstEventType),
+		lastEventType:   strings.TrimSpace(details.LastEventType),
+		closeStatus:     strings.TrimSpace(details.CloseStatus),
+		closeReason:     strings.TrimSpace(details.CloseReason),
 	}
 }
 
@@ -129,7 +171,7 @@ func isOpenAIWSIngressTurnRetryable(err error) bool {
 	if !errors.As(err, &turnErr) || turnErr == nil {
 		return false
 	}
-	if errors.Is(turnErr.cause, context.Canceled) || errors.Is(turnErr.cause, context.DeadlineExceeded) {
+	if errors.Is(turnErr.cause, context.Canceled) {
 		return false
 	}
 	if turnErr.wroteDownstream {
