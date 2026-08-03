@@ -6,11 +6,13 @@
 
 | 项目 | 说明 |
 |------|------|
-| **上游仓库** | Wei-Shaw/sub2api |
-| **Fork 仓库** | bayma888/sub2api-bmai |
+| **上游仓库** | Wei-Shaw/sub2api（remote: `upstream`） |
+| **Fork 仓库** | Clarence12138/sub2api（remote: `origin`） |
+| **产品主干** | `main` = 官方 + 二开定制（可部署）；不设长期 `dev` |
 | **技术栈** | Go 后端 (Ent ORM + Gin) + Vue3 前端 (pnpm) |
 | **数据库** | PostgreSQL 16 + Redis |
 | **包管理** | 后端: go modules, 前端: **pnpm**（不是 npm） |
+| **Fork 维护** | 见仓库根目录 `FORK_MAINTENANCE.md` |
 
 ## 二、本地环境配置
 
@@ -263,19 +265,30 @@ psql -U sub2api -h 127.0.0.1 -d sub2api -f migration.sql
 
 ### Git 操作
 
+分支模型与发版约定见 `FORK_MAINTENANCE.md` / `AGENTS.md`。摘要：
+
 ```bash
-# 同步上游
-git fetch upstream
-git checkout main
+# 同步官方（推荐脚本；对 main 使用 merge，不是 rebase）
+./scripts/sync-upstream.sh
+# 验证后：
+git push origin main
+# 发版：git tag vX.Y.Z-clarence.N && git push origin vX.Y.Z-clarence.N
+
+# 或手动
+git fetch upstream --tags
+git switch main
 git merge upstream/main
 git push origin main
 
-# 创建功能分支
-git checkout -b feature/xxx
+# 创建功能分支（从最新 main，命名用 feat/ fix/ 等）
+git fetch origin
+git switch main
+git pull --ff-only origin main
+git switch -c feat/xxx
 
-# Rebase 到最新 main
-git fetch upstream
-git rebase upstream/main
+# 功能分支跟上主干（rebase 的是 origin/main，不是直接 rebase 官方）
+git fetch origin
+git rebase origin/main
 ```
 
 ### 前端操作
