@@ -29,6 +29,8 @@ type OpenAIRecordUsageInput struct {
 	UpstreamEndpoint   string
 	UserAgent          string // 请求的 User-Agent
 	IPAddress          string // 请求的客户端 IP 地址
+	EdgeName           string // 中转短名（X-Edge-Name），直连为空
+	EntryHost          string // 入口 Host（X-Edge-Host），直连为空
 	SessionID          string // 客户端显式会话标识（session_id / X-Session-Id 等请求头），仅用于用量行会话关联
 	RequestPayloadHash string
 	APIKeyService      APIKeyQuotaUpdater
@@ -56,6 +58,8 @@ type CyberPolicyUsageInput struct {
 	UpstreamEndpoint   string
 	UserAgent          string
 	IPAddress          string
+	EdgeName           string
+	EntryHost          string
 	SessionID          string
 	RequestPayloadHash string
 	APIKeyService      APIKeyQuotaUpdater
@@ -91,6 +95,8 @@ func (s *OpenAIGatewayService) RecordCyberPolicyUsageLog(ctx context.Context, in
 		UpstreamEndpoint:   in.UpstreamEndpoint,
 		UserAgent:          in.UserAgent,
 		IPAddress:          in.IPAddress,
+		EdgeName:           in.EdgeName,
+		EntryHost:          in.EntryHost,
 		SessionID:          in.SessionID,
 		RequestPayloadHash: in.RequestPayloadHash,
 		APIKeyService:      in.APIKeyService,
@@ -335,6 +341,10 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if input.IPAddress != "" {
 		usageLog.IPAddress = &input.IPAddress
 	}
+
+	// 中转入口（X-Edge-Name / X-Edge-Host）；缺失/无效时保持 nil
+	usageLog.EdgeName = optionalTrimmedStringPtr(input.EdgeName)
+	usageLog.EntryHost = optionalTrimmedStringPtr(input.EntryHost)
 
 	// 添加 SessionID（客户端显式会话标识；缺失/无效时保持 nil）
 	usageLog.SessionID = optionalTrimmedStringPtr(input.SessionID)

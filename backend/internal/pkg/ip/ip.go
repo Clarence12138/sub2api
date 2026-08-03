@@ -361,3 +361,132 @@ func ValidateIPPatterns(patterns []string) []string {
 	}
 	return invalid
 }
+
+// Edge ingress headers injected by relay Caddy (vmiss / zouter).
+const (
+	HeaderEdgeName = "X-Edge-Name"
+	HeaderEdgeHost = "X-Edge-Host"
+	// EdgeNameCloudflare is stored when the request arrived via Cloudflare orange-cloud.
+	EdgeNameCloudflare = "cf"
+)
+
+const (
+	maxEdgeNameLength  = 32
+	maxEntryHostLength = 255
+)
+
+// GetEdgeIngress resolves usage-log edge identity for the request:
+//
+//   - entry_host: always best-effort (X-Edge-Host → X-Forwarded-Host → Request.Host)
+//   - edge_name: X-Edge-Name when valid (vmiss/zouter); else "cf" when Cloudflare
+//     orange-cloud headers are present; else empty for bare origin access
+//
+// The two fields are independent: a CF hit can be edge_name=cf with
+// entry_host=nexapi.us.ci, and a direct api.nexapi.us.ci hit can have only entry_host.
+func GetEdgeIngress(c *gin.Context) (edgeName, entryHost string) {
+	if c == nil || c.Request == nil {
+		return "", ""
+	}
+	entryHost = resolveEntryHost(c)
+	if name := sanitizeEdgeName(c.GetHeader(HeaderEdgeName)); name != "" {
+		return name, entryHost
+	}
+	if isCloudflareRequest(c) {
+		return EdgeNameCloudflare, entryHost
+	}
+	return "", entryHost
+}
+
+// resolveEntryHost prefers explicit edge tags, then proxy Host chain, then raw Host.
+func resolveEntryHost(c *gin.Context) string {
+	if host := sanitizeEntryHost(c.GetHeader(HeaderEdgeHost)); host != "" {
+		return host
+	}
+	// X-Forwarded-Host may be a comma-separated chain; take the left-most client-facing value.
+	if xfh := c.GetHeader("X-Forwarded-Host"); xfh != "" {
+		first := xfh
+		if i := strings.IndexByte(xfh, ','); i >= 0 {
+			first = xfh[:i]
+		}
+		if host := sanitizeEntryHost(first); host != "" {
+			return host
+		}
+	}
+	if c.Request.Host != "" {
+		if host := sanitizeEntryHost(c.Request.Host); host != "" {
+			return host
+		}
+	}
+	return ""
+}
+
+// isCloudflareRequest detects orange-cloud (or any CF reverse-proxy) hops via
+// headers Cloudflare always injects and clients rarely forge usefully at the edge.
+func isCloudflareRequest(c *gin.Context) bool {
+	if c == nil || c.Request == nil {
+		return false
+	}
+	if strings.TrimSpace(c.GetHeader("CF-Ray")) != "" {
+		return true
+	}
+	if strings.TrimSpace(c.GetHeader("CF-Connecting-IP")) != "" {
+		return true
+	}
+	if strings.TrimSpace(c.GetHeader("CF-Visitor")) != "" {
+		return true
+	}
+	// CDN-Loop: cloudflare; loops=1
+	if cdnLoop := strings.ToLower(c.GetHeader("CDN-Loop")); strings.Contains(cdnLoop, "cloudflare") {
+		return true
+	}
+	return false
+}
+
+func sanitizeEdgeName(raw string) string {
+	trimmed := strings.ToLower(strings.TrimSpace(raw))
+	if trimmed == "" || len(trimmed) > maxEdgeNameLength {
+		return ""
+	}
+	for _, r := range trimmed {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			continue
+		}
+		return ""
+	}
+	return trimmed
+}
+
+func sanitizeEntryHost(raw string) string {
+	trimmed := strings.ToLower(strings.TrimSpace(raw))
+	if trimmed == "" {
+		return ""
+	}
+	// Strip accidental scheme if a misconfigured proxy copies a full URL.
+	if strings.Contains(trimmed, "://") {
+		if idx := strings.Index(trimmed, "://"); idx >= 0 {
+			trimmed = trimmed[idx+3:]
+		}
+	}
+	// Drop path/query if present.
+	if i := strings.IndexAny(trimmed, "/?#"); i >= 0 {
+		trimmed = trimmed[:i]
+	}
+	trimmed = strings.TrimSpace(trimmed)
+	if trimmed == "" {
+		return ""
+	}
+	// Remove port when present (host:port or [ipv6]:port).
+	if host, _, err := net.SplitHostPort(trimmed); err == nil {
+		trimmed = host
+	}
+	trimmed = strings.Trim(trimmed, "[]")
+	if trimmed == "" || len(trimmed) > maxEntryHostLength {
+		return ""
+	}
+	for _, r := range trimmed {
+		if r <= 0x20 || r == 0x7f || r == '/' || r == ' ' {
+			return ""
+		}
+	}
+	return trimmed
+}

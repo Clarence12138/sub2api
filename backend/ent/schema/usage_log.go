@@ -129,6 +129,17 @@ func (UsageLog) Fields() []ent.Field {
 			MaxLen(45). // 支持 IPv6
 			Optional().
 			Nillable(),
+		// 中转入口：边缘 Caddy 注入的 X-Edge-Name / X-Edge-Host；直连为空
+		field.String("edge_name").
+			MaxLen(32).
+			Optional().
+			Nillable().
+			Comment("边缘中转短名，如 vmiss/zouter；直连为空"),
+		field.String("entry_host").
+			MaxLen(255).
+			Optional().
+			Nillable().
+			Comment("用户实际访问的入口 Host，如 vmiss.nexapi.us.ci"),
 
 		// 图片生成字段（仅 gemini-3-pro-image 等图片模型使用）
 		field.Int("image_count").

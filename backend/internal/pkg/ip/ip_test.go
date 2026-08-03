@@ -274,3 +274,66 @@ func TestGetSecurityClientIPRequestSnapshotOverridesLiveFallback(t *testing.T) {
 		})
 	}
 }
+
+func TestGetEdgeIngress(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("relay headers win", func(t *testing.T) {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest("GET", "/", nil)
+		c.Request.Header.Set(HeaderEdgeName, "VMiss")
+		c.Request.Header.Set(HeaderEdgeHost, "vmiss.nexapi.us.ci:443")
+		// CF headers must not override explicit edge name.
+		c.Request.Header.Set("CF-Ray", "abc-SJC")
+		name, host := GetEdgeIngress(c)
+		require.Equal(t, "vmiss", name)
+		require.Equal(t, "vmiss.nexapi.us.ci", host)
+	})
+
+	t.Run("entry host falls back to request host", func(t *testing.T) {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest("GET", "https://api.nexapi.us.ci/v1/models", nil)
+		c.Request.Host = "api.nexapi.us.ci"
+		name, host := GetEdgeIngress(c)
+		require.Equal(t, "", name)
+		require.Equal(t, "api.nexapi.us.ci", host)
+	})
+
+	t.Run("invalid edge name still keeps entry host", func(t *testing.T) {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest("GET", "/", nil)
+		c.Request.Header.Set(HeaderEdgeName, "vmiss;drop")
+		c.Request.Header.Set(HeaderEdgeHost, "vmiss.nexapi.us.ci")
+		name, host := GetEdgeIngress(c)
+		require.Equal(t, "", name)
+		require.Equal(t, "vmiss.nexapi.us.ci", host)
+	})
+
+	t.Run("cloudflare orange cloud", func(t *testing.T) {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest("GET", "https://nexapi.us.ci/", nil)
+		c.Request.Host = "nexapi.us.ci"
+		c.Request.Header.Set("CF-Ray", "a2524048eaea14c7-SJC")
+		c.Request.Header.Set("CF-Connecting-IP", "203.0.113.10")
+		name, host := GetEdgeIngress(c)
+		require.Equal(t, EdgeNameCloudflare, name)
+		require.Equal(t, "nexapi.us.ci", host)
+	})
+
+	t.Run("x-forwarded-host preferred over request host", func(t *testing.T) {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest("GET", "/", nil)
+		c.Request.Host = "api.nexapi.us.ci"
+		c.Request.Header.Set("X-Forwarded-Host", "nexapi.us.ci, edge.internal")
+		c.Request.Header.Set("CF-Ray", "abc")
+		name, host := GetEdgeIngress(c)
+		require.Equal(t, EdgeNameCloudflare, name)
+		require.Equal(t, "nexapi.us.ci", host)
+	})
+
+	t.Run("nil context", func(t *testing.T) {
+		name, host := GetEdgeIngress(nil)
+		require.Equal(t, "", name)
+		require.Equal(t, "", host)
+	})
+}

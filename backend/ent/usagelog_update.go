@@ -712,6 +712,46 @@ func (_u *UsageLogUpdate) ClearIPAddress() *UsageLogUpdate {
 	return _u
 }
 
+// SetEdgeName sets the "edge_name" field.
+func (_u *UsageLogUpdate) SetEdgeName(v string) *UsageLogUpdate {
+	_u.mutation.SetEdgeName(v)
+	return _u
+}
+
+// SetNillableEdgeName sets the "edge_name" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableEdgeName(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetEdgeName(*v)
+	}
+	return _u
+}
+
+// ClearEdgeName clears the value of the "edge_name" field.
+func (_u *UsageLogUpdate) ClearEdgeName() *UsageLogUpdate {
+	_u.mutation.ClearEdgeName()
+	return _u
+}
+
+// SetEntryHost sets the "entry_host" field.
+func (_u *UsageLogUpdate) SetEntryHost(v string) *UsageLogUpdate {
+	_u.mutation.SetEntryHost(v)
+	return _u
+}
+
+// SetNillableEntryHost sets the "entry_host" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableEntryHost(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetEntryHost(*v)
+	}
+	return _u
+}
+
+// ClearEntryHost clears the value of the "entry_host" field.
+func (_u *UsageLogUpdate) ClearEntryHost() *UsageLogUpdate {
+	_u.mutation.ClearEntryHost()
+	return _u
+}
+
 // SetImageCount sets the "image_count" field.
 func (_u *UsageLogUpdate) SetImageCount(v int) *UsageLogUpdate {
 	_u.mutation.ResetImageCount()
@@ -1041,6 +1081,16 @@ func (_u *UsageLogUpdate) check() error {
 			return &ValidationError{Name: "ip_address", err: fmt.Errorf(`ent: validator failed for field "UsageLog.ip_address": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.EdgeName(); ok {
+		if err := usagelog.EdgeNameValidator(v); err != nil {
+			return &ValidationError{Name: "edge_name", err: fmt.Errorf(`ent: validator failed for field "UsageLog.edge_name": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.EntryHost(); ok {
+		if err := usagelog.EntryHostValidator(v); err != nil {
+			return &ValidationError{Name: "entry_host", err: fmt.Errorf(`ent: validator failed for field "UsageLog.entry_host": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.ImageSize(); ok {
 		if err := usagelog.ImageSizeValidator(v); err != nil {
 			return &ValidationError{Name: "image_size", err: fmt.Errorf(`ent: validator failed for field "UsageLog.image_size": %w`, err)}
@@ -1263,6 +1313,18 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.IPAddressCleared() {
 		_spec.ClearField(usagelog.FieldIPAddress, field.TypeString)
+	}
+	if value, ok := _u.mutation.EdgeName(); ok {
+		_spec.SetField(usagelog.FieldEdgeName, field.TypeString, value)
+	}
+	if _u.mutation.EdgeNameCleared() {
+		_spec.ClearField(usagelog.FieldEdgeName, field.TypeString)
+	}
+	if value, ok := _u.mutation.EntryHost(); ok {
+		_spec.SetField(usagelog.FieldEntryHost, field.TypeString, value)
+	}
+	if _u.mutation.EntryHostCleared() {
+		_spec.ClearField(usagelog.FieldEntryHost, field.TypeString)
 	}
 	if value, ok := _u.mutation.ImageCount(); ok {
 		_spec.SetField(usagelog.FieldImageCount, field.TypeInt, value)
@@ -2169,6 +2231,46 @@ func (_u *UsageLogUpdateOne) ClearIPAddress() *UsageLogUpdateOne {
 	return _u
 }
 
+// SetEdgeName sets the "edge_name" field.
+func (_u *UsageLogUpdateOne) SetEdgeName(v string) *UsageLogUpdateOne {
+	_u.mutation.SetEdgeName(v)
+	return _u
+}
+
+// SetNillableEdgeName sets the "edge_name" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableEdgeName(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetEdgeName(*v)
+	}
+	return _u
+}
+
+// ClearEdgeName clears the value of the "edge_name" field.
+func (_u *UsageLogUpdateOne) ClearEdgeName() *UsageLogUpdateOne {
+	_u.mutation.ClearEdgeName()
+	return _u
+}
+
+// SetEntryHost sets the "entry_host" field.
+func (_u *UsageLogUpdateOne) SetEntryHost(v string) *UsageLogUpdateOne {
+	_u.mutation.SetEntryHost(v)
+	return _u
+}
+
+// SetNillableEntryHost sets the "entry_host" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableEntryHost(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetEntryHost(*v)
+	}
+	return _u
+}
+
+// ClearEntryHost clears the value of the "entry_host" field.
+func (_u *UsageLogUpdateOne) ClearEntryHost() *UsageLogUpdateOne {
+	_u.mutation.ClearEntryHost()
+	return _u
+}
+
 // SetImageCount sets the "image_count" field.
 func (_u *UsageLogUpdateOne) SetImageCount(v int) *UsageLogUpdateOne {
 	_u.mutation.ResetImageCount()
@@ -2511,6 +2613,16 @@ func (_u *UsageLogUpdateOne) check() error {
 			return &ValidationError{Name: "ip_address", err: fmt.Errorf(`ent: validator failed for field "UsageLog.ip_address": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.EdgeName(); ok {
+		if err := usagelog.EdgeNameValidator(v); err != nil {
+			return &ValidationError{Name: "edge_name", err: fmt.Errorf(`ent: validator failed for field "UsageLog.edge_name": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.EntryHost(); ok {
+		if err := usagelog.EntryHostValidator(v); err != nil {
+			return &ValidationError{Name: "entry_host", err: fmt.Errorf(`ent: validator failed for field "UsageLog.entry_host": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.ImageSize(); ok {
 		if err := usagelog.ImageSizeValidator(v); err != nil {
 			return &ValidationError{Name: "image_size", err: fmt.Errorf(`ent: validator failed for field "UsageLog.image_size": %w`, err)}
@@ -2750,6 +2862,18 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if _u.mutation.IPAddressCleared() {
 		_spec.ClearField(usagelog.FieldIPAddress, field.TypeString)
+	}
+	if value, ok := _u.mutation.EdgeName(); ok {
+		_spec.SetField(usagelog.FieldEdgeName, field.TypeString, value)
+	}
+	if _u.mutation.EdgeNameCleared() {
+		_spec.ClearField(usagelog.FieldEdgeName, field.TypeString)
+	}
+	if value, ok := _u.mutation.EntryHost(); ok {
+		_spec.SetField(usagelog.FieldEntryHost, field.TypeString, value)
+	}
+	if _u.mutation.EntryHostCleared() {
+		_spec.ClearField(usagelog.FieldEntryHost, field.TypeString)
 	}
 	if value, ok := _u.mutation.ImageCount(); ok {
 		_spec.SetField(usagelog.FieldImageCount, field.TypeInt, value)

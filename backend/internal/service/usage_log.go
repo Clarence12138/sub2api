@@ -170,6 +170,12 @@ type UsageLog struct {
 	FirstTokenMs *int
 	UserAgent    *string
 	IPAddress    *string
+	// EdgeName is the short edge-relay id from X-Edge-Name (e.g. vmiss/zouter).
+	// Nil when the request hit the origin directly or the header was absent/invalid.
+	EdgeName *string
+	// EntryHost is the client-facing Host from X-Edge-Host (e.g. vmiss.nexapi.us.ci).
+	// Always paired with EdgeName: either both set or both nil.
+	EntryHost *string
 	// SessionID is the explicit client-provided request correlation identifier
 	// (e.g. the session_id / X-Session-Id headers). Nil when the client sent no
 	// valid session header. It is never derived from prompt_cache_key or content.

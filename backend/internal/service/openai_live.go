@@ -224,6 +224,8 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 			Controller:            LiveControllerPending,
 			UserAgent:             identity.UserAgent,
 			IPAddress:             identity.IPAddress,
+			EdgeName:              identity.EdgeName,
+			EntryHost:             identity.EntryHost,
 			InboundEndpoint:       identity.InboundEndpoint,
 			AttestationCiphertext: attestationCiphertext,
 		}
@@ -817,6 +819,8 @@ func (s *OpenAIGatewayService) finalizeLiveCall(record *LiveCallRecord) {
 	upstreamEndpoint := "/backend-api/codex/realtime/calls"
 	userAgent := record.UserAgent
 	ipAddress := record.IPAddress
+	edgeName := record.EdgeName
+	entryHost := record.EntryHost
 	billingType := int8(BillingTypeBalance)
 	if record.SubscriptionID > 0 {
 		billingType = BillingTypeSubscription
@@ -844,6 +848,8 @@ func (s *OpenAIGatewayService) finalizeLiveCall(record *LiveCallRecord) {
 		DurationMs:       &duration,
 		UserAgent:        &userAgent,
 		IPAddress:        &ipAddress,
+		EdgeName:         optionalTrimmedStringPtr(edgeName),
+		EntryHost:        optionalTrimmedStringPtr(entryHost),
 		InboundEndpoint:  &inboundEndpoint,
 		UpstreamEndpoint: &upstreamEndpoint,
 		CreatedAt:        record.CreatedAt,

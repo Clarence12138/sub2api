@@ -46,6 +46,8 @@ type LiveCallIdentity struct {
 	SubscriptionID  *int64
 	UserAgent       string
 	IPAddress       string
+	EdgeName        string
+	EntryHost       string
 	InboundEndpoint string
 }
 
@@ -65,6 +67,8 @@ type LiveCallRecord struct {
 	ControllerOwner string
 	UserAgent       string
 	IPAddress       string
+	EdgeName        string
+	EntryHost       string
 	InboundEndpoint string
 	// AttestationCiphertext 仅用于让同一会话的 Sideband 复用创建时的证明。
 	AttestationCiphertext string

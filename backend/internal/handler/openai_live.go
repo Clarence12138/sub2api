@@ -153,6 +153,7 @@ func liveCallIdentity(
 		value := subscription.ID
 		subscriptionID = &value
 	}
+	edgeName, entryHost := ip.GetEdgeIngress(c)
 	return service.LiveCallIdentity{
 		APIKeyID:        apiKey.ID,
 		UserID:          userID,
@@ -160,6 +161,8 @@ func liveCallIdentity(
 		SubscriptionID:  subscriptionID,
 		UserAgent:       c.GetHeader("User-Agent"),
 		IPAddress:       ip.GetClientIP(c),
+		EdgeName:        edgeName,
+		EntryHost:       entryHost,
 		InboundEndpoint: GetInboundEndpoint(c),
 	}
 }

@@ -1612,6 +1612,10 @@ export interface AdminUsageLog extends UsageLog {
   channel_id?: number | null
   billing_tier?: string | null
 
+  // 中转入口（仅管理员可见）：直连时为空
+  edge_name?: string | null
+  entry_host?: string | null
+
   // 最小账号信息（仅管理员接口返回）
   account?: UsageLogAccountSummary
 }

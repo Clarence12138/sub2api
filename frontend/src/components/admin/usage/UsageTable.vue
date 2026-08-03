@@ -225,6 +225,17 @@
           <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
         </template>
 
+        <template #cell-edge_name="{ row }">
+          <span
+            class="text-sm font-mono"
+            :class="row.edge_name ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400 dark:text-gray-500'"
+            :title="row.entry_host || undefined"
+          >{{ row.edge_name || t('admin.usage.edgeDirect') }}</span>
+        </template>
+        <template #cell-entry_host="{ row }">
+          <span v-if="row.entry_host" class="text-sm font-mono text-gray-600 dark:text-gray-400">{{ row.entry_host }}</span>
+          <span v-else class="text-sm text-gray-400">—</span>
+        </template>
         <template #cell-ip_address="{ row }">
           <div v-if="row.ip_address">
             <span class="text-sm font-mono text-gray-600 dark:text-gray-400">{{ row.ip_address }}</span>

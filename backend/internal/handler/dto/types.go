@@ -564,6 +564,11 @@ type AdminUsageLog struct {
 	// IPAddress 用户请求 IP
 	IPAddress *string `json:"ip_address,omitempty"`
 
+	// EdgeName 中转短名（vmiss/zouter）；直连为空
+	EdgeName *string `json:"edge_name,omitempty"`
+	// EntryHost 用户实际访问的入口 Host
+	EntryHost *string `json:"entry_host,omitempty"`
+
 	// Account 最小账号信息（避免泄露敏感字段）
 	Account *AccountSummary `json:"account,omitempty"`
 }

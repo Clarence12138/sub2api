@@ -82,6 +82,10 @@ const (
 	FieldUserAgent = "user_agent"
 	// FieldIPAddress holds the string denoting the ip_address field in the database.
 	FieldIPAddress = "ip_address"
+	// FieldEdgeName holds the string denoting the edge_name field in the database.
+	FieldEdgeName = "edge_name"
+	// FieldEntryHost holds the string denoting the entry_host field in the database.
+	FieldEntryHost = "entry_host"
 	// FieldImageCount holds the string denoting the image_count field in the database.
 	FieldImageCount = "image_count"
 	// FieldImageSize holds the string denoting the image_size field in the database.
@@ -190,6 +194,8 @@ var Columns = []string{
 	FieldFirstTokenMs,
 	FieldUserAgent,
 	FieldIPAddress,
+	FieldEdgeName,
+	FieldEntryHost,
 	FieldImageCount,
 	FieldImageSize,
 	FieldImageInputSize,
@@ -264,6 +270,10 @@ var (
 	UserAgentValidator func(string) error
 	// IPAddressValidator is a validator for the "ip_address" field. It is called by the builders before save.
 	IPAddressValidator func(string) error
+	// EdgeNameValidator is a validator for the "edge_name" field. It is called by the builders before save.
+	EdgeNameValidator func(string) error
+	// EntryHostValidator is a validator for the "entry_host" field. It is called by the builders before save.
+	EntryHostValidator func(string) error
 	// DefaultImageCount holds the default value on creation for the "image_count" field.
 	DefaultImageCount int
 	// ImageSizeValidator is a validator for the "image_size" field. It is called by the builders before save.
@@ -460,6 +470,16 @@ func ByUserAgent(opts ...sql.OrderTermOption) OrderOption {
 // ByIPAddress orders the results by the ip_address field.
 func ByIPAddress(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldIPAddress, opts...).ToFunc()
+}
+
+// ByEdgeName orders the results by the edge_name field.
+func ByEdgeName(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldEdgeName, opts...).ToFunc()
+}
+
+// ByEntryHost orders the results by the entry_host field.
+func ByEntryHost(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldEntryHost, opts...).ToFunc()
 }
 
 // ByImageCount orders the results by the image_count field.

@@ -43171,6 +43171,8 @@ type UsageLogMutation struct {
 	addfirst_token_ms            *int
 	user_agent                   *string
 	ip_address                   *string
+	edge_name                    *string
+	entry_host                   *string
 	image_count                  *int
 	addimage_count               *int
 	image_size                   *string
@@ -45056,6 +45058,104 @@ func (m *UsageLogMutation) ResetIPAddress() {
 	delete(m.clearedFields, usagelog.FieldIPAddress)
 }
 
+// SetEdgeName sets the "edge_name" field.
+func (m *UsageLogMutation) SetEdgeName(s string) {
+	m.edge_name = &s
+}
+
+// EdgeName returns the value of the "edge_name" field in the mutation.
+func (m *UsageLogMutation) EdgeName() (r string, exists bool) {
+	v := m.edge_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEdgeName returns the old "edge_name" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldEdgeName(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEdgeName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEdgeName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEdgeName: %w", err)
+	}
+	return oldValue.EdgeName, nil
+}
+
+// ClearEdgeName clears the value of the "edge_name" field.
+func (m *UsageLogMutation) ClearEdgeName() {
+	m.edge_name = nil
+	m.clearedFields[usagelog.FieldEdgeName] = struct{}{}
+}
+
+// EdgeNameCleared returns if the "edge_name" field was cleared in this mutation.
+func (m *UsageLogMutation) EdgeNameCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldEdgeName]
+	return ok
+}
+
+// ResetEdgeName resets all changes to the "edge_name" field.
+func (m *UsageLogMutation) ResetEdgeName() {
+	m.edge_name = nil
+	delete(m.clearedFields, usagelog.FieldEdgeName)
+}
+
+// SetEntryHost sets the "entry_host" field.
+func (m *UsageLogMutation) SetEntryHost(s string) {
+	m.entry_host = &s
+}
+
+// EntryHost returns the value of the "entry_host" field in the mutation.
+func (m *UsageLogMutation) EntryHost() (r string, exists bool) {
+	v := m.entry_host
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEntryHost returns the old "entry_host" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldEntryHost(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEntryHost is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEntryHost requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEntryHost: %w", err)
+	}
+	return oldValue.EntryHost, nil
+}
+
+// ClearEntryHost clears the value of the "entry_host" field.
+func (m *UsageLogMutation) ClearEntryHost() {
+	m.entry_host = nil
+	m.clearedFields[usagelog.FieldEntryHost] = struct{}{}
+}
+
+// EntryHostCleared returns if the "entry_host" field was cleared in this mutation.
+func (m *UsageLogMutation) EntryHostCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldEntryHost]
+	return ok
+}
+
+// ResetEntryHost resets all changes to the "entry_host" field.
+func (m *UsageLogMutation) ResetEntryHost() {
+	m.entry_host = nil
+	delete(m.clearedFields, usagelog.FieldEntryHost)
+}
+
 // SetImageCount sets the "image_count" field.
 func (m *UsageLogMutation) SetImageCount(i int) {
 	m.image_count = &i
@@ -45773,7 +45873,7 @@ func (m *UsageLogMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UsageLogMutation) Fields() []string {
-	fields := make([]string, 0, 45)
+	fields := make([]string, 0, 47)
 	if m.user != nil {
 		fields = append(fields, usagelog.FieldUserID)
 	}
@@ -45875,6 +45975,12 @@ func (m *UsageLogMutation) Fields() []string {
 	}
 	if m.ip_address != nil {
 		fields = append(fields, usagelog.FieldIPAddress)
+	}
+	if m.edge_name != nil {
+		fields = append(fields, usagelog.FieldEdgeName)
+	}
+	if m.entry_host != nil {
+		fields = append(fields, usagelog.FieldEntryHost)
 	}
 	if m.image_count != nil {
 		fields = append(fields, usagelog.FieldImageCount)
@@ -45985,6 +46091,10 @@ func (m *UsageLogMutation) Field(name string) (ent.Value, bool) {
 		return m.UserAgent()
 	case usagelog.FieldIPAddress:
 		return m.IPAddress()
+	case usagelog.FieldEdgeName:
+		return m.EdgeName()
+	case usagelog.FieldEntryHost:
+		return m.EntryHost()
 	case usagelog.FieldImageCount:
 		return m.ImageCount()
 	case usagelog.FieldImageSize:
@@ -46084,6 +46194,10 @@ func (m *UsageLogMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldUserAgent(ctx)
 	case usagelog.FieldIPAddress:
 		return m.OldIPAddress(ctx)
+	case usagelog.FieldEdgeName:
+		return m.OldEdgeName(ctx)
+	case usagelog.FieldEntryHost:
+		return m.OldEntryHost(ctx)
 	case usagelog.FieldImageCount:
 		return m.OldImageCount(ctx)
 	case usagelog.FieldImageSize:
@@ -46352,6 +46466,20 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetIPAddress(v)
+		return nil
+	case usagelog.FieldEdgeName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEdgeName(v)
+		return nil
+	case usagelog.FieldEntryHost:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEntryHost(v)
 		return nil
 	case usagelog.FieldImageCount:
 		v, ok := value.(int)
@@ -46754,6 +46882,12 @@ func (m *UsageLogMutation) ClearedFields() []string {
 	if m.FieldCleared(usagelog.FieldIPAddress) {
 		fields = append(fields, usagelog.FieldIPAddress)
 	}
+	if m.FieldCleared(usagelog.FieldEdgeName) {
+		fields = append(fields, usagelog.FieldEdgeName)
+	}
+	if m.FieldCleared(usagelog.FieldEntryHost) {
+		fields = append(fields, usagelog.FieldEntryHost)
+	}
 	if m.FieldCleared(usagelog.FieldImageSize) {
 		fields = append(fields, usagelog.FieldImageSize)
 	}
@@ -46827,6 +46961,12 @@ func (m *UsageLogMutation) ClearField(name string) error {
 		return nil
 	case usagelog.FieldIPAddress:
 		m.ClearIPAddress()
+		return nil
+	case usagelog.FieldEdgeName:
+		m.ClearEdgeName()
+		return nil
+	case usagelog.FieldEntryHost:
+		m.ClearEntryHost()
 		return nil
 	case usagelog.FieldImageSize:
 		m.ClearImageSize()
@@ -46958,6 +47098,12 @@ func (m *UsageLogMutation) ResetField(name string) error {
 		return nil
 	case usagelog.FieldIPAddress:
 		m.ResetIPAddress()
+		return nil
+	case usagelog.FieldEdgeName:
+		m.ResetEdgeName()
+		return nil
+	case usagelog.FieldEntryHost:
+		m.ResetEntryHost()
 		return nil
 	case usagelog.FieldImageCount:
 		m.ResetImageCount()

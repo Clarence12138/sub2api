@@ -463,6 +463,34 @@ func (_c *UsageLogCreate) SetNillableIPAddress(v *string) *UsageLogCreate {
 	return _c
 }
 
+// SetEdgeName sets the "edge_name" field.
+func (_c *UsageLogCreate) SetEdgeName(v string) *UsageLogCreate {
+	_c.mutation.SetEdgeName(v)
+	return _c
+}
+
+// SetNillableEdgeName sets the "edge_name" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableEdgeName(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetEdgeName(*v)
+	}
+	return _c
+}
+
+// SetEntryHost sets the "entry_host" field.
+func (_c *UsageLogCreate) SetEntryHost(v string) *UsageLogCreate {
+	_c.mutation.SetEntryHost(v)
+	return _c
+}
+
+// SetNillableEntryHost sets the "entry_host" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableEntryHost(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetEntryHost(*v)
+	}
+	return _c
+}
+
 // SetImageCount sets the "image_count" field.
 func (_c *UsageLogCreate) SetImageCount(v int) *UsageLogCreate {
 	_c.mutation.SetImageCount(v)
@@ -861,6 +889,16 @@ func (_c *UsageLogCreate) check() error {
 			return &ValidationError{Name: "ip_address", err: fmt.Errorf(`ent: validator failed for field "UsageLog.ip_address": %w`, err)}
 		}
 	}
+	if v, ok := _c.mutation.EdgeName(); ok {
+		if err := usagelog.EdgeNameValidator(v); err != nil {
+			return &ValidationError{Name: "edge_name", err: fmt.Errorf(`ent: validator failed for field "UsageLog.edge_name": %w`, err)}
+		}
+	}
+	if v, ok := _c.mutation.EntryHost(); ok {
+		if err := usagelog.EntryHostValidator(v); err != nil {
+			return &ValidationError{Name: "entry_host", err: fmt.Errorf(`ent: validator failed for field "UsageLog.entry_host": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.ImageCount(); !ok {
 		return &ValidationError{Name: "image_count", err: errors.New(`ent: missing required field "UsageLog.image_count"`)}
 	}
@@ -1049,6 +1087,14 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.IPAddress(); ok {
 		_spec.SetField(usagelog.FieldIPAddress, field.TypeString, value)
 		_node.IPAddress = &value
+	}
+	if value, ok := _c.mutation.EdgeName(); ok {
+		_spec.SetField(usagelog.FieldEdgeName, field.TypeString, value)
+		_node.EdgeName = &value
+	}
+	if value, ok := _c.mutation.EntryHost(); ok {
+		_spec.SetField(usagelog.FieldEntryHost, field.TypeString, value)
+		_node.EntryHost = &value
 	}
 	if value, ok := _c.mutation.ImageCount(); ok {
 		_spec.SetField(usagelog.FieldImageCount, field.TypeInt, value)
@@ -1822,6 +1868,42 @@ func (u *UsageLogUpsert) UpdateIPAddress() *UsageLogUpsert {
 // ClearIPAddress clears the value of the "ip_address" field.
 func (u *UsageLogUpsert) ClearIPAddress() *UsageLogUpsert {
 	u.SetNull(usagelog.FieldIPAddress)
+	return u
+}
+
+// SetEdgeName sets the "edge_name" field.
+func (u *UsageLogUpsert) SetEdgeName(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldEdgeName, v)
+	return u
+}
+
+// UpdateEdgeName sets the "edge_name" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateEdgeName() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldEdgeName)
+	return u
+}
+
+// ClearEdgeName clears the value of the "edge_name" field.
+func (u *UsageLogUpsert) ClearEdgeName() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldEdgeName)
+	return u
+}
+
+// SetEntryHost sets the "entry_host" field.
+func (u *UsageLogUpsert) SetEntryHost(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldEntryHost, v)
+	return u
+}
+
+// UpdateEntryHost sets the "entry_host" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateEntryHost() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldEntryHost)
+	return u
+}
+
+// ClearEntryHost clears the value of the "entry_host" field.
+func (u *UsageLogUpsert) ClearEntryHost() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldEntryHost)
 	return u
 }
 
@@ -2740,6 +2822,48 @@ func (u *UsageLogUpsertOne) UpdateIPAddress() *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) ClearIPAddress() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearIPAddress()
+	})
+}
+
+// SetEdgeName sets the "edge_name" field.
+func (u *UsageLogUpsertOne) SetEdgeName(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetEdgeName(v)
+	})
+}
+
+// UpdateEdgeName sets the "edge_name" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateEdgeName() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateEdgeName()
+	})
+}
+
+// ClearEdgeName clears the value of the "edge_name" field.
+func (u *UsageLogUpsertOne) ClearEdgeName() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearEdgeName()
+	})
+}
+
+// SetEntryHost sets the "entry_host" field.
+func (u *UsageLogUpsertOne) SetEntryHost(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetEntryHost(v)
+	})
+}
+
+// UpdateEntryHost sets the "entry_host" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateEntryHost() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateEntryHost()
+	})
+}
+
+// ClearEntryHost clears the value of the "entry_host" field.
+func (u *UsageLogUpsertOne) ClearEntryHost() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearEntryHost()
 	})
 }
 
@@ -3854,6 +3978,48 @@ func (u *UsageLogUpsertBulk) UpdateIPAddress() *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) ClearIPAddress() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearIPAddress()
+	})
+}
+
+// SetEdgeName sets the "edge_name" field.
+func (u *UsageLogUpsertBulk) SetEdgeName(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetEdgeName(v)
+	})
+}
+
+// UpdateEdgeName sets the "edge_name" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateEdgeName() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateEdgeName()
+	})
+}
+
+// ClearEdgeName clears the value of the "edge_name" field.
+func (u *UsageLogUpsertBulk) ClearEdgeName() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearEdgeName()
+	})
+}
+
+// SetEntryHost sets the "entry_host" field.
+func (u *UsageLogUpsertBulk) SetEntryHost(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetEntryHost(v)
+	})
+}
+
+// UpdateEntryHost sets the "entry_host" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateEntryHost() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateEntryHost()
+	})
+}
+
+// ClearEntryHost clears the value of the "entry_host" field.
+func (u *UsageLogUpsertBulk) ClearEntryHost() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearEntryHost()
 	})
 }
 

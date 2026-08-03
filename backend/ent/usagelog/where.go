@@ -225,6 +225,16 @@ func IPAddress(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldIPAddress, v))
 }
 
+// EdgeName applies equality check predicate on the "edge_name" field. It's identical to EdgeNameEQ.
+func EdgeName(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldEdgeName, v))
+}
+
+// EntryHost applies equality check predicate on the "entry_host" field. It's identical to EntryHostEQ.
+func EntryHost(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldEntryHost, v))
+}
+
 // ImageCount applies equality check predicate on the "image_count" field. It's identical to ImageCountEQ.
 func ImageCount(v int) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldImageCount, v))
@@ -1828,6 +1838,156 @@ func IPAddressEqualFold(v string) predicate.UsageLog {
 // IPAddressContainsFold applies the ContainsFold predicate on the "ip_address" field.
 func IPAddressContainsFold(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldContainsFold(FieldIPAddress, v))
+}
+
+// EdgeNameEQ applies the EQ predicate on the "edge_name" field.
+func EdgeNameEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldEdgeName, v))
+}
+
+// EdgeNameNEQ applies the NEQ predicate on the "edge_name" field.
+func EdgeNameNEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldEdgeName, v))
+}
+
+// EdgeNameIn applies the In predicate on the "edge_name" field.
+func EdgeNameIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldEdgeName, vs...))
+}
+
+// EdgeNameNotIn applies the NotIn predicate on the "edge_name" field.
+func EdgeNameNotIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldEdgeName, vs...))
+}
+
+// EdgeNameGT applies the GT predicate on the "edge_name" field.
+func EdgeNameGT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldEdgeName, v))
+}
+
+// EdgeNameGTE applies the GTE predicate on the "edge_name" field.
+func EdgeNameGTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldEdgeName, v))
+}
+
+// EdgeNameLT applies the LT predicate on the "edge_name" field.
+func EdgeNameLT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldEdgeName, v))
+}
+
+// EdgeNameLTE applies the LTE predicate on the "edge_name" field.
+func EdgeNameLTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldEdgeName, v))
+}
+
+// EdgeNameContains applies the Contains predicate on the "edge_name" field.
+func EdgeNameContains(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContains(FieldEdgeName, v))
+}
+
+// EdgeNameHasPrefix applies the HasPrefix predicate on the "edge_name" field.
+func EdgeNameHasPrefix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasPrefix(FieldEdgeName, v))
+}
+
+// EdgeNameHasSuffix applies the HasSuffix predicate on the "edge_name" field.
+func EdgeNameHasSuffix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasSuffix(FieldEdgeName, v))
+}
+
+// EdgeNameIsNil applies the IsNil predicate on the "edge_name" field.
+func EdgeNameIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldEdgeName))
+}
+
+// EdgeNameNotNil applies the NotNil predicate on the "edge_name" field.
+func EdgeNameNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldEdgeName))
+}
+
+// EdgeNameEqualFold applies the EqualFold predicate on the "edge_name" field.
+func EdgeNameEqualFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEqualFold(FieldEdgeName, v))
+}
+
+// EdgeNameContainsFold applies the ContainsFold predicate on the "edge_name" field.
+func EdgeNameContainsFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContainsFold(FieldEdgeName, v))
+}
+
+// EntryHostEQ applies the EQ predicate on the "entry_host" field.
+func EntryHostEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldEntryHost, v))
+}
+
+// EntryHostNEQ applies the NEQ predicate on the "entry_host" field.
+func EntryHostNEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldEntryHost, v))
+}
+
+// EntryHostIn applies the In predicate on the "entry_host" field.
+func EntryHostIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldEntryHost, vs...))
+}
+
+// EntryHostNotIn applies the NotIn predicate on the "entry_host" field.
+func EntryHostNotIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldEntryHost, vs...))
+}
+
+// EntryHostGT applies the GT predicate on the "entry_host" field.
+func EntryHostGT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldEntryHost, v))
+}
+
+// EntryHostGTE applies the GTE predicate on the "entry_host" field.
+func EntryHostGTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldEntryHost, v))
+}
+
+// EntryHostLT applies the LT predicate on the "entry_host" field.
+func EntryHostLT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldEntryHost, v))
+}
+
+// EntryHostLTE applies the LTE predicate on the "entry_host" field.
+func EntryHostLTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldEntryHost, v))
+}
+
+// EntryHostContains applies the Contains predicate on the "entry_host" field.
+func EntryHostContains(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContains(FieldEntryHost, v))
+}
+
+// EntryHostHasPrefix applies the HasPrefix predicate on the "entry_host" field.
+func EntryHostHasPrefix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasPrefix(FieldEntryHost, v))
+}
+
+// EntryHostHasSuffix applies the HasSuffix predicate on the "entry_host" field.
+func EntryHostHasSuffix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasSuffix(FieldEntryHost, v))
+}
+
+// EntryHostIsNil applies the IsNil predicate on the "entry_host" field.
+func EntryHostIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldEntryHost))
+}
+
+// EntryHostNotNil applies the NotNil predicate on the "entry_host" field.
+func EntryHostNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldEntryHost))
+}
+
+// EntryHostEqualFold applies the EqualFold predicate on the "entry_host" field.
+func EntryHostEqualFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEqualFold(FieldEntryHost, v))
+}
+
+// EntryHostContainsFold applies the ContainsFold predicate on the "entry_host" field.
+func EntryHostContainsFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContainsFold(FieldEntryHost, v))
 }
 
 // ImageCountEQ applies the EQ predicate on the "image_count" field.
