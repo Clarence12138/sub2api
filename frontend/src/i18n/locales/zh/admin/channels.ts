@@ -328,6 +328,8 @@ export default {
       unbanFailed: '解封用户失败',
       inputDetailTitle: '输入摘要详情',
       inputDetailContent: '完整内容',
+      inputDetailPromptAndRequest: '提示词与完整请求体',
+      inputDetailUpstreamError: '上游错误详情',
       matchedKeyword: '命中关键词',
       queueDelay: '排队 {ms} ms',
       allGroups: '全部分组',

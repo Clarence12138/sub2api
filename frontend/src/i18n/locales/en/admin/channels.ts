@@ -328,6 +328,8 @@ export default {
       unbanFailed: 'Failed to unban user',
       inputDetailTitle: 'Input Summary Detail',
       inputDetailContent: 'Full Content',
+      inputDetailPromptAndRequest: 'Prompt & Full Request Body',
+      inputDetailUpstreamError: 'Upstream Error Detail',
       matchedKeyword: 'Matched Keyword',
       queueDelay: 'Queued {ms} ms',
       allGroups: 'All Groups',

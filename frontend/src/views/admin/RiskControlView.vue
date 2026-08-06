@@ -1095,16 +1095,29 @@
           <div class="rounded-xl border border-gray-100 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-800">
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.inputDetailContent') }}</p>
+                <p class="text-sm font-semibold text-gray-900 dark:text-white">
+                  {{ inputDetailRow.action === 'cyber_policy'
+                    ? t('admin.riskControl.inputDetailPromptAndRequest')
+                    : t('admin.riskControl.inputDetailContent') }}
+                </p>
                 <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
                   {{ inputDetailRow.endpoint || '-' }} · {{ inputDetailRow.provider || '-' }} / {{ inputDetailRow.model || '-' }}
+                  <span v-if="inputDetailRow.request_id"> · {{ inputDetailRow.request_id }}</span>
                 </p>
               </div>
               <span v-if="inputDetailRow.group_name" class="inline-flex rounded-md bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">
                 {{ inputDetailRow.group_name }}
               </span>
             </div>
-            <pre class="mt-4 max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-950 p-4 text-sm leading-6 text-gray-100 shadow-inner dark:bg-black/50">{{ inputDetailText }}</pre>
+            <pre class="mt-4 max-h-[520px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-950 p-4 text-sm leading-6 text-gray-100 shadow-inner dark:bg-black/50">{{ inputDetailPromptText }}</pre>
+          </div>
+
+          <div
+            v-if="inputDetailUpstreamErrorText"
+            class="rounded-xl border border-red-100 bg-white p-4 shadow-sm dark:border-red-900/40 dark:bg-dark-800"
+          >
+            <p class="text-sm font-semibold text-red-700 dark:text-red-300">{{ t('admin.riskControl.inputDetailUpstreamError') }}</p>
+            <pre class="mt-4 max-h-[280px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-950 p-4 text-sm leading-6 text-gray-100 shadow-inner dark:bg-black/50">{{ inputDetailUpstreamErrorText }}</pre>
           </div>
         </div>
 
@@ -1584,9 +1597,22 @@ const riskThresholdRows = computed<RiskThresholdRow[]>(() => (
   }))
 ))
 
-const inputDetailText = computed(() => {
+// 详情主区优先展示请求/提示词；upstream error 单独一块，避免 cyber 复盘时互相覆盖。
+const inputDetailPromptText = computed(() => {
   if (!inputDetailRow.value) return '-'
-  return inputDetailRow.value.input_excerpt || inputDetailRow.value.error || '-'
+  const excerpt = (inputDetailRow.value.input_excerpt || '').trim()
+  if (excerpt) return excerpt
+  // 历史 cyber 记录可能没有 input_excerpt，退回 error 以免详情空白。
+  return (inputDetailRow.value.error || '').trim() || '-'
+})
+
+const inputDetailUpstreamErrorText = computed(() => {
+  if (!inputDetailRow.value) return ''
+  const err = (inputDetailRow.value.error || '').trim()
+  if (!err) return ''
+  // 已有 input_excerpt 时，error 作为「上游错误」副区展示；否则主区已展示 error，不再重复。
+  if ((inputDetailRow.value.input_excerpt || '').trim()) return err
+  return ''
 })
 
 const queueUsagePercent = computed(() => `${Math.min(100, Math.max(0, status.value?.queue_usage_percent ?? 0)).toFixed(1)}%`)

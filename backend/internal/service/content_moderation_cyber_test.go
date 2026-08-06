@@ -115,6 +115,7 @@ func TestRecordCyberPolicyEvent_WritesLogWhenEnabled(t *testing.T) {
 		UpstreamMessage: "flagged",
 		UpstreamBody:    `{"error":{"code":"cyber_policy"}}`,
 		UpstreamStatus:  400,
+		RequestBody:     []byte(`{"input":"hello cyber"}`),
 	})
 
 	logs := repo.snapshotLogs()
@@ -125,6 +126,7 @@ func TestRecordCyberPolicyEvent_WritesLogWhenEnabled(t *testing.T) {
 	require.True(t, log.Flagged)
 	require.Equal(t, "cyber_policy", log.HighestCategory)
 	require.Contains(t, log.Error, "flagged")
+	require.Contains(t, log.InputExcerpt, "hello cyber")
 	require.False(t, log.AutoBanned)
 	// emailService is nil, so EmailSent must be false
 	require.False(t, log.EmailSent)

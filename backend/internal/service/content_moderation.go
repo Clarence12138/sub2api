@@ -63,6 +63,11 @@ const (
 	maxContentModerationTimeoutMS     = 30000
 	maxModerationInputRunes           = 12000
 	maxModerationExcerptRunes         = 240
+	// cyber_policy 事后复盘需要更完整的请求上下文（账号风控溯源），
+	// 与普通内容审计的 240 字摘要区分开；落库前仍会脱敏并截断。
+	maxCyberPolicyPromptRunes       = 50000
+	maxCyberPolicyRequestBodyBytes  = 512 * 1024
+	maxCyberPolicyInputExcerptRunes = 80000
 
 	defaultContentModerationWorkerCount          = 4
 	maxContentModerationWorkerCount              = 32
@@ -2983,6 +2988,9 @@ type CyberPolicyRecordInput struct {
 	UpstreamStatus  int
 	UpstreamInTok   int
 	UpstreamOutTok  int
+	// RequestBody 为命中当次客户端请求体副本（已在 handler 侧拷贝），
+	// 用于落库完整提示词与请求体，便于账号风控溯源；可为空。
+	RequestBody []byte
 }
 
 // RecordCyberPolicyEvent 把一次 cyber_policy 硬阻断写入风控中心日志、计入违规计数、
@@ -3016,6 +3024,8 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 	if in.UpstreamInTok > 0 || in.UpstreamOutTok > 0 {
 		errBody = fmt.Sprintf("%s\nupstream_usage=in:%d,out:%d", errBody, in.UpstreamInTok, in.UpstreamOutTok)
 	}
+	// 落库完整请求上下文（提示词 + 请求体），密钥脱敏、图片/长 base64 省略、长度截断。
+	inputExcerpt := buildCyberPolicyInputExcerpt(in.RequestBody)
 	log := &ContentModerationLog{
 		RequestID:       in.RequestID,
 		UserID:          userID,
@@ -3032,6 +3042,7 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 		Flagged:         true,
 		HighestCategory: "cyber_policy",
 		HighestScore:    1.0,
+		InputExcerpt:    inputExcerpt,
 		Error:           trimRunes(redactContentModerationSecrets(errBody), maxModerationExcerptRunes*4),
 		CreatedAt:       time.Now(),
 	}
