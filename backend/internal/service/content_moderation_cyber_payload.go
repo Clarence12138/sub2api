@@ -22,15 +22,15 @@ func buildCyberPolicyInputExcerpt(requestBody []byte) string {
 
 	var b strings.Builder
 	if prompt != "" {
-		b.WriteString("=== 提示词 / Prompt ===\n")
-		b.WriteString(trimRunes(prompt, maxCyberPolicyPromptRunes))
+		_, _ = b.WriteString("=== 提示词 / Prompt ===\n")
+		_, _ = b.WriteString(trimRunes(prompt, maxCyberPolicyPromptRunes))
 		if bodyText != "" {
-			b.WriteString("\n\n")
+			_, _ = b.WriteString("\n\n")
 		}
 	}
 	if bodyText != "" {
-		b.WriteString("=== 完整请求体 / Request Body ===\n")
-		b.WriteString(bodyText)
+		_, _ = b.WriteString("=== 完整请求体 / Request Body ===\n")
+		_, _ = b.WriteString(bodyText)
 	}
 	if b.Len() == 0 {
 		return ""
@@ -132,10 +132,7 @@ func collectCyberPolicyTextValue(value gjson.Result, parts *[]string) {
 		if value.Get("parts").Exists() {
 			collectCyberPolicyTextValue(value.Get("parts"), parts)
 		}
-		// Responses 协议 input_text 可能直接挂在 item 上
-		if typ == "input_text" || typ == "output_text" || typ == "text" || typ == "message" {
-			// text 已处理；若仍无 content，不重复
-		}
+		// Responses 协议 input_text / output_text / message 的正文已由上方 text/content/parts 覆盖，无需再按 type 分支。
 	}
 }
 
