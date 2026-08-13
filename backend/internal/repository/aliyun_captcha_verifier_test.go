@@ -91,3 +91,10 @@ func TestAliyunCaptchaVerifier_TransportError(t *testing.T) {
 	var apiErr *service.AliyunCaptchaAPIError
 	require.False(t, errors.As(err, &apiErr), "transport errors must not be normalized to API errors")
 }
+
+func TestIsAliyunCaptchaAPIErrorCode(t *testing.T) {
+	require.False(t, isAliyunCaptchaAPIErrorCode(""))
+	require.False(t, isAliyunCaptchaAPIErrorCode(" null "))
+	require.False(t, isAliyunCaptchaAPIErrorCode("<nil>"))
+	require.True(t, isAliyunCaptchaAPIErrorCode("SignatureDoesNotMatch"))
+}

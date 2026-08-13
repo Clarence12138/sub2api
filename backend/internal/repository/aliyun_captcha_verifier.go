@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	captcha "github.com/alibabacloud-go/captcha-20230305/client"
 	openapiutil "github.com/alibabacloud-go/darabonba-openapi/v2/utils"
@@ -64,18 +65,25 @@ func (v *aliyunCaptchaVerifier) VerifyCaptcha(ctx context.Context, cred service.
 // 其余错误（网络/超时等）原样返回。
 func normalizeAliyunCaptchaError(err error) error {
 	var teaErr *tea.SDKError
-	if errors.As(err, &teaErr) {
+	if errors.As(err, &teaErr) && isAliyunCaptchaAPIErrorCode(tea.StringValue(teaErr.Code)) {
 		return &service.AliyunCaptchaAPIError{
 			Code:    tea.StringValue(teaErr.Code),
 			Message: tea.StringValue(teaErr.Message),
 		}
 	}
 	var daraErr *dara.SDKError
-	if errors.As(err, &daraErr) {
+	if errors.As(err, &daraErr) && isAliyunCaptchaAPIErrorCode(dara.StringValue(daraErr.Code)) {
 		return &service.AliyunCaptchaAPIError{
 			Code:    dara.StringValue(daraErr.Code),
 			Message: dara.StringValue(daraErr.Message),
 		}
 	}
 	return err
+}
+
+func isAliyunCaptchaAPIErrorCode(code string) bool {
+	trimmed := strings.TrimSpace(code)
+	return trimmed != "" &&
+		!strings.EqualFold(trimmed, "null") &&
+		!strings.EqualFold(trimmed, "<nil>")
 }
