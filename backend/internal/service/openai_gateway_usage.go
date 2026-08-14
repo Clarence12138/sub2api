@@ -15,6 +15,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"go.uber.org/zap"
 )
 
@@ -1025,6 +1026,8 @@ func (s *OpenAIGatewayService) updateCodexUsageSnapshot(ctx context.Context, acc
 	if len(updates) == 0 {
 		return
 	}
+	// 换窗必须在 Extra 节流之前观察，否则会丢掉关窗瞬间。
+	observeCodexWindow(s.codexWindowObserver, accountID, sampleFromCodexExtra(updates, now, usagestats.AccountWindowClosedProbe))
 	if !s.getCodexSnapshotThrottle().Allow(accountID, now) {
 		return
 	}

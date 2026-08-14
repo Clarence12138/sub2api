@@ -53,6 +53,12 @@ func TestMigrationsRunner_IsIdempotent_AndSchemaIsUpToDate(t *testing.T) {
 	requireColumn(t, tx, "accounts", "rate_limit_reset_at", "timestamp with time zone", 0, true)
 	requireColumn(t, tx, "accounts", "overload_until", "timestamp with time zone", 0, true)
 	requireColumn(t, tx, "accounts", "session_window_status", "character varying", 20, true)
+
+	requireColumn(t, tx, "account_usage_windows", "window_type", "character varying", 8, false)
+	requireColumn(t, tx, "account_usage_windows", "status", "character varying", 8, false)
+	requireColumn(t, tx, "account_usage_windows", "peak_used_percent", "numeric", 0, false)
+	requireColumn(t, tx, "account_usage_windows", "inferred_limit_usd", "numeric", 0, true)
+	requireColumn(t, tx, "account_usage_windows", "model_breakdown", "jsonb", 0, false)
 	requireIndex(t, tx, "accounts", "idx_accounts_autopause_expiry_due")
 
 	// groups: OpenAI Live 默认关闭，管理员显式开启后才可访问。

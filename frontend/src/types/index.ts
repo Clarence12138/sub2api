@@ -2185,6 +2185,56 @@ export interface AccountUsageStatsResponse {
   upstream_endpoints: EndpointStat[]
 }
 
+export interface AccountWindowModelStat {
+  model: string
+  requests: number
+  tokens: number
+  standard_cost: number
+  account_cost: number
+}
+
+export interface AccountUsageWindow {
+  id: number
+  account_id: number
+  window_type: '5h' | '7d' | string
+  window_start: string
+  window_end: string
+  status: 'open' | 'closed' | string
+  closed_reason?: string
+  peak_used_percent: number
+  last_used_percent: number
+  local_cost: number
+  standard_cost: number
+  user_cost: number
+  requests: number
+  tokens: number
+  inferred_limit_usd: number | null
+  inferred_confidence: 'high' | 'medium' | 'low' | string
+  model_breakdown: AccountWindowModelStat[]
+  sampled_at: string
+}
+
+export interface AccountDailyModelStat {
+  date: string
+  model: string
+  requests: number
+  tokens: number
+  standard_cost: number
+  account_cost: number
+}
+
+export interface AccountWindowLimitTrend {
+  slope_usd_per_week: number
+  trend: 'loosening' | 'tightening' | 'flat' | 'insufficient' | string
+  sample_count: number
+}
+
+export interface AccountUsageWindowsResponse {
+  windows: AccountUsageWindow[]
+  daily_by_model: AccountDailyModelStat[]
+  limit_trend: AccountWindowLimitTrend
+}
+
 // ==================== User Attribute Types ====================
 
 export type UserAttributeType = 'text' | 'textarea' | 'number' | 'email' | 'url' | 'date' | 'select' | 'multi_select'

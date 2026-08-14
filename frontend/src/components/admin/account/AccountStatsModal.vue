@@ -20,7 +20,11 @@
           <div>
             <div class="font-semibold text-gray-900 dark:text-gray-100">{{ account.name }}</div>
             <div class="text-xs text-gray-500 dark:text-gray-400">
-              {{ t('admin.accounts.last30DaysUsage') }}
+              {{
+                activeTab === 'windows'
+                  ? t('admin.accounts.stats.windowsSubtitle')
+                  : t('admin.accounts.last30DaysUsage')
+              }}
             </div>
           </div>
         </div>
@@ -36,12 +40,33 @@
         </span>
       </div>
 
+      <div class="flex gap-1 rounded-lg bg-gray-100 p-1 dark:bg-dark-600">
+        <button
+          type="button"
+          data-test="stats-tab-calendar"
+          class="flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
+          :class="tabClass('calendar')"
+          @click="activeTab = 'calendar'"
+        >
+          {{ t('admin.accounts.stats.tabCalendar') }}
+        </button>
+        <button
+          type="button"
+          data-test="stats-tab-windows"
+          class="flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
+          :class="tabClass('windows')"
+          @click="activeTab = 'windows'"
+        >
+          {{ t('admin.accounts.stats.tabWindows') }}
+        </button>
+      </div>
+
       <!-- Loading State -->
-      <div v-if="loading" class="flex items-center justify-center py-12">
+      <div v-if="activeTab === 'calendar' && loading" class="flex items-center justify-center py-12">
         <LoadingSpinner />
       </div>
 
-      <template v-else-if="stats">
+      <template v-else-if="activeTab === 'calendar' && stats">
         <!-- Row 1: Main Stats Cards -->
         <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <!-- 30-Day Total Cost -->
@@ -424,9 +449,106 @@
         />
       </template>
 
+      <div v-else-if="activeTab === 'windows' && windowLoading" class="flex items-center justify-center py-12">
+        <LoadingSpinner />
+      </div>
+
+      <template v-else-if="activeTab === 'windows' && windowStats">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-2">
+            <label class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.stats.windowRange') }}</label>
+            <select
+              v-model.number="windowDays"
+              data-test="window-days"
+              class="rounded-md border border-gray-200 bg-white px-2 py-1 text-sm dark:border-dark-500 dark:bg-dark-700 dark:text-gray-100"
+            >
+              <option :value="14">14</option>
+              <option :value="30">30</option>
+              <option :value="60">60</option>
+              <option :value="90">90</option>
+            </select>
+          </div>
+          <div
+            class="rounded-full px-2.5 py-1 text-xs font-semibold"
+            :class="trendBadgeClass"
+            :title="t('admin.accounts.stats.limitTrendHint')"
+            data-test="limit-trend-badge"
+          >
+            {{ trendBadgeText }}
+          </div>
+        </div>
+
+        <div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-dark-500">
+          <table class="min-w-full text-left text-xs">
+            <thead class="bg-gray-50 text-gray-500 dark:bg-dark-700 dark:text-gray-400">
+              <tr>
+                <th class="px-3 py-2 font-medium">{{ t('admin.accounts.stats.windowType') }}</th>
+                <th class="px-3 py-2 font-medium">{{ t('admin.accounts.stats.windowPeriod') }}</th>
+                <th class="px-3 py-2 font-medium">{{ t('admin.accounts.stats.standardCost') }}</th>
+                <th class="px-3 py-2 font-medium">{{ t('admin.accounts.stats.peakPercent') }}</th>
+                <th class="px-3 py-2 font-medium">{{ t('admin.accounts.stats.inferredLimit') }}</th>
+                <th class="px-3 py-2 font-medium">{{ t('admin.accounts.stats.models') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="row in windowStats.windows"
+                :key="`${row.window_type}-${row.window_end}`"
+                class="border-t border-gray-100 dark:border-dark-600"
+              >
+                <td class="px-3 py-2">
+                  {{ row.window_type }}
+                  <span
+                    v-if="row.status === 'open'"
+                    class="ml-1 rounded bg-blue-100 px-1 text-[10px] text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                  >{{ t('admin.accounts.stats.windowOpen') }}</span>
+                </td>
+                <td class="px-3 py-2 text-gray-600 dark:text-gray-300">{{ formatWindowRange(row) }}</td>
+                <td class="px-3 py-2">${{ formatCost(row.standard_cost) }}</td>
+                <td class="px-3 py-2">{{ row.peak_used_percent.toFixed(1) }}%</td>
+                <td class="px-3 py-2">
+                  <span v-if="row.inferred_limit_usd != null">${{ formatCost(row.inferred_limit_usd) }}</span>
+                  <span v-else class="text-gray-400">{{ t('admin.accounts.stats.lowConfidence') }}</span>
+                </td>
+                <td class="px-3 py-2 text-gray-600 dark:text-gray-300">{{ formatModelBreakdown(row.model_breakdown) }}</td>
+              </tr>
+              <tr v-if="!windowStats.windows.length">
+                <td colspan="6" class="px-3 py-6 text-center text-gray-400">
+                  {{ t('admin.accounts.stats.noWindowSnapshots') }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card p-4">
+          <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
+            {{ t('admin.accounts.stats.dailyByModel') }}
+          </h3>
+          <div class="h-64">
+            <Line v-if="dailyModelChartData" :data="dailyModelChartData" :options="dailyModelChartOptions" />
+            <div v-else class="flex h-full items-center justify-center text-sm text-gray-500">
+              {{ t('admin.dashboard.noDataAvailable') }}
+            </div>
+          </div>
+        </div>
+
+        <div class="card p-4">
+          <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
+            {{ t('admin.accounts.stats.sevenDayLimitTrend') }}
+          </h3>
+          <div class="h-64">
+            <Line v-if="limitTrendChartData" :data="limitTrendChartData" :options="limitTrendChartOptions" />
+            <div v-else class="flex h-full items-center justify-center text-sm text-gray-500">
+              {{ t('admin.accounts.stats.noWindowSnapshots') }}
+            </div>
+          </div>
+        </div>
+      </template>
+
       <!-- No Data State -->
       <div
-        v-else-if="!loading"
+        v-else-if="activeTab === 'calendar' && !loading"
         class="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400"
       >
         <Icon name="chartBar" size="xl" class="mb-4 h-12 w-12" />
@@ -468,7 +590,13 @@ import ModelDistributionChart from '@/components/charts/ModelDistributionChart.v
 import EndpointDistributionChart from '@/components/charts/EndpointDistributionChart.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { adminAPI } from '@/api/admin'
-import type { Account, AccountUsageStatsResponse } from '@/types'
+import type {
+  Account,
+  AccountUsageStatsResponse,
+  AccountUsageWindow,
+  AccountUsageWindowsResponse,
+  AccountWindowModelStat
+} from '@/types'
 
 ChartJS.register(
   CategoryScale,
@@ -493,7 +621,19 @@ const emit = defineEmits<{
 }>()
 
 const loading = ref(false)
+const windowLoading = ref(false)
 const stats = ref<AccountUsageStatsResponse | null>(null)
+const windowStats = ref<AccountUsageWindowsResponse | null>(null)
+const activeTab = ref<'calendar' | 'windows'>('calendar')
+const windowDays = ref(30)
+
+const MODEL_COLORS = ['#3b82f6', '#10b981', '#f97316', '#8b5cf6', '#ef4444', '#14b8a6', '#eab308']
+
+function tabClass(tab: 'calendar' | 'windows') {
+  return activeTab.value === tab
+    ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-500 dark:text-gray-100'
+    : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
+}
 
 // Dark mode detection
 const isDarkMode = computed(() => {
@@ -642,14 +782,139 @@ const lineChartOptions = computed(() => ({
   }
 }))
 
-// Load stats when modal opens
+const dailyModelChartData = computed(() => {
+  const rows = windowStats.value?.daily_by_model ?? []
+  if (!rows.length) return null
+  const dates = [...new Set(rows.map((r) => r.date))]
+  const models = [...new Set(rows.map((r) => r.model))]
+  return {
+    labels: dates,
+    datasets: models.map((model, index) => ({
+      label: model,
+      data: dates.map((date) => rows.find((r) => r.date === date && r.model === model)?.standard_cost ?? 0),
+      borderColor: MODEL_COLORS[index % MODEL_COLORS.length],
+      backgroundColor: 'transparent',
+      fill: false,
+      tension: 0.25,
+      yAxisID: 'y'
+    }))
+  }
+})
+
+const dailyModelChartOptions = computed(() => ({
+  ...lineChartOptions.value,
+  scales: {
+    ...lineChartOptions.value.scales,
+    y1: { display: false }
+  }
+}))
+
+const sevenDayWindows = computed(() =>
+  (windowStats.value?.windows ?? []).filter((w) => w.window_type === '7d')
+)
+
+const limitTrendChartData = computed(() => {
+  const rows = sevenDayWindows.value
+  if (!rows.length) return null
+  return {
+    labels: rows.map((w) => formatShortDate(w.window_end)),
+    datasets: [
+      {
+        label: t('admin.accounts.stats.standardCost') + ' (USD)',
+        data: rows.map((w) => w.standard_cost),
+        borderColor: '#3b82f6',
+        backgroundColor: 'rgba(59, 130, 246, 0.08)',
+        fill: true,
+        tension: 0.25,
+        yAxisID: 'y'
+      },
+      {
+        label: t('admin.accounts.stats.inferredLimit') + ' (USD)',
+        data: rows.map((w) => (w.inferred_limit_usd != null && w.inferred_confidence !== 'low' ? w.inferred_limit_usd : null)),
+        borderColor: '#f97316',
+        borderDash: [6, 4],
+        backgroundColor: 'transparent',
+        fill: false,
+        spanGaps: false,
+        tension: 0,
+        yAxisID: 'y'
+      },
+      {
+        label: t('admin.accounts.stats.peakPercent'),
+        data: rows.map((w) => w.peak_used_percent),
+        borderColor: '#8b5cf6',
+        backgroundColor: 'transparent',
+        fill: false,
+        tension: 0.25,
+        yAxisID: 'y1'
+      }
+    ]
+  }
+})
+
+const limitTrendChartOptions = computed(() => ({
+  ...lineChartOptions.value,
+  scales: {
+    ...lineChartOptions.value.scales,
+    y1: {
+      ...lineChartOptions.value.scales.y1,
+      title: {
+        display: true,
+        text: t('admin.accounts.stats.peakPercent'),
+        color: '#8b5cf6',
+        font: { size: 11 }
+      },
+      ticks: {
+        ...lineChartOptions.value.scales.y1.ticks,
+        color: '#8b5cf6',
+        callback: (value: string | number) => `${Number(value).toFixed(0)}%`
+      }
+    }
+  }
+}))
+
+const trendBadgeClass = computed(() => {
+  switch (windowStats.value?.limit_trend.trend) {
+    case 'loosening':
+      return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+    case 'tightening':
+      return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+    case 'flat':
+      return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+    default:
+      return 'bg-gray-100 text-gray-600 dark:bg-dark-600 dark:text-gray-300'
+  }
+})
+
+const trendBadgeText = computed(() => {
+  const trend = windowStats.value?.limit_trend
+  const key = {
+    loosening: 'limitLoosening',
+    tightening: 'limitTightening',
+    flat: 'limitFlat',
+    insufficient: 'limitInsufficient'
+  }[trend?.trend || 'insufficient']
+  return t(`admin.accounts.stats.${key}`)
+})
+
 watch(
   () => props.show,
   async (newVal) => {
     if (newVal && props.account) {
+      activeTab.value = 'calendar'
       await loadStats()
     } else {
       stats.value = null
+      windowStats.value = null
+    }
+  }
+)
+
+watch(
+  () => [props.show, props.account?.id, activeTab.value, windowDays.value] as const,
+  async ([show, accountId, tab]) => {
+    if (show && accountId && tab === 'windows') {
+      await loadWindowStats()
     }
   }
 )
@@ -666,6 +931,39 @@ const loadStats = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const loadWindowStats = async () => {
+  if (!props.account) return
+  windowLoading.value = true
+  try {
+    windowStats.value = await adminAPI.accounts.getUsageWindows(props.account.id, {
+      days: windowDays.value
+    })
+  } catch (error) {
+    console.error('Failed to load account usage windows:', error)
+    windowStats.value = null
+  } finally {
+    windowLoading.value = false
+  }
+}
+
+function formatShortDate(value: string): string {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return `${String(parsed.getMonth() + 1).padStart(2, '0')}/${String(parsed.getDate()).padStart(2, '0')}`
+}
+
+function formatWindowRange(row: AccountUsageWindow): string {
+  return `${formatShortDate(row.window_start)} – ${formatShortDate(row.window_end)}`
+}
+
+function formatModelBreakdown(models: AccountWindowModelStat[]): string {
+  if (!models?.length) return '-'
+  return models
+    .slice(0, 4)
+    .map((item) => `${item.model} $${formatCost(item.standard_cost)}`)
+    .join(' · ')
 }
 
 const handleClose = () => {

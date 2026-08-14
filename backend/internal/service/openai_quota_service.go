@@ -12,6 +12,7 @@ import (
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/imroc/req/v3"
 )
 
@@ -120,6 +121,14 @@ type OpenAIQuotaService struct {
 	privacyClientFactory PrivacyClientFactory
 	agentIdentityTaskMu  sync.Mutex
 	agentIdentityWS      agentIdentityWSConnectionInvalidator
+	windowObserver       CodexWindowObserver
+}
+
+func (s *OpenAIQuotaService) SetCodexWindowObserver(observer CodexWindowObserver) {
+	if s == nil {
+		return
+	}
+	s.windowObserver = observer
 }
 
 // NewOpenAIQuotaService constructs a quota service. token provider is required —
@@ -188,6 +197,7 @@ func (s *OpenAIQuotaService) QueryUsage(ctx context.Context, accountID int64) (*
 	}
 
 	payload.FetchedAt = time.Now().Unix()
+	s.observeQuotaUsage(accountID, &payload, time.Now())
 	details := s.queryResetCreditDetails(callCtx, client, accessToken, chatGPTAccountID, fedRAMP, accountID)
 	if details != nil {
 		hasDetailCount := details.AvailableCount != nil
@@ -348,6 +358,11 @@ func (s *OpenAIQuotaService) ResetCredit(ctx context.Context, accountID int64) (
 		"code", payload.Code,
 		"windows_reset", payload.WindowsReset,
 	)
+	if s.windowObserver != nil {
+		if err := s.windowObserver.CloseOpenWindows(ctx, accountID, usagestats.AccountWindowClosedResetCredit); err != nil {
+			slog.Warn("openai_quota_reset_close_windows_failed", "account_id", accountID, "error", err)
+		}
+	}
 	return &payload, nil
 }
 
@@ -624,6 +639,44 @@ func buildCodexSparkWindowExtraUpdates(usage *OpenAIQuotaUsage, now time.Time) m
 	}
 	updates["codex_usage_updated_at"] = now.Format(time.RFC3339)
 	return updates
+}
+
+func (s *OpenAIQuotaService) observeQuotaUsage(accountID int64, usage *OpenAIQuotaUsage, now time.Time) {
+	if s == nil || s.windowObserver == nil || usage == nil {
+		return
+	}
+	updates := buildCodexSparkWindowExtraUpdates(usage, now)
+	if len(updates) == 0 {
+		updates = buildCodexUsageExtraUpdates(rateLimitToCodexSnapshot(usage.RateLimit), now)
+	}
+	if len(updates) == 0 {
+		return
+	}
+	observeCodexWindow(s.windowObserver, accountID, sampleFromCodexExtra(updates, now, usagestats.AccountWindowClosedProbe))
+}
+
+func rateLimitToCodexSnapshot(limit *OpenAIRateLimit) *OpenAICodexUsageSnapshot {
+	if limit == nil {
+		return nil
+	}
+	snap := &OpenAICodexUsageSnapshot{}
+	if w := limit.PrimaryWindow; w != nil {
+		p := w.UsedPercent
+		snap.PrimaryUsedPercent = &p
+		ra := int(w.ResetAfterSeconds)
+		snap.PrimaryResetAfterSeconds = &ra
+		wm := int(w.LimitWindowSeconds / 60)
+		snap.PrimaryWindowMinutes = &wm
+	}
+	if w := limit.SecondaryWindow; w != nil {
+		p := w.UsedPercent
+		snap.SecondaryUsedPercent = &p
+		ra := int(w.ResetAfterSeconds)
+		snap.SecondaryResetAfterSeconds = &ra
+		wm := int(w.LimitWindowSeconds / 60)
+		snap.SecondaryWindowMinutes = &wm
+	}
+	return snap
 }
 
 // mapUpstreamStatus collapses upstream HTTP statuses into a stable set we

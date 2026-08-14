@@ -13,6 +13,7 @@ import type {
   WindowStats,
   ClaudeModel,
   AccountUsageStatsResponse,
+  AccountUsageWindowsResponse,
   TempUnschedulableStatus,
   AdminDataPayload,
   AdminDataImportResult,
@@ -289,6 +290,17 @@ export async function getStats(id: number, days: number = 30): Promise<AccountUs
   const { data } = await apiClient.get<AccountUsageStatsResponse>(`/admin/accounts/${id}/stats`, {
     params: { days }
   })
+  return data
+}
+
+export async function getUsageWindows(
+  id: number,
+  params?: { days?: number; window_type?: string; from?: string; to?: string }
+): Promise<AccountUsageWindowsResponse> {
+  const { data } = await apiClient.get<AccountUsageWindowsResponse>(
+    `/admin/accounts/${id}/usage-windows`,
+    { params }
+  )
   return data
 }
 
@@ -997,6 +1009,7 @@ export const accountsAPI = {
   refreshCredentials,
   applyOAuthCredentials,
   getStats,
+  getUsageWindows,
   clearError,
   getUsage,
   getBatchUsage,

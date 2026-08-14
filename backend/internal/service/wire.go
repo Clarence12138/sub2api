@@ -177,15 +177,22 @@ func ProvideOpenAITokenProvider(
 // ProvideOpenAIQuotaService wires the OpenAI quota query/reset service.
 // It depends on the OpenAI token provider for refreshed access tokens and the
 // privacy client factory for the impersonated upstream HTTP client.
+func ProvideCodexWindowRecorder(repo AccountUsageWindowRepository) *CodexWindowRecorder {
+	return NewCodexWindowRecorder(repo)
+}
+
 func ProvideOpenAIQuotaService(
 	accountRepo AccountRepository,
 	proxyRepo ProxyRepository,
 	tokenProvider *OpenAITokenProvider,
 	privacyClientFactory PrivacyClientFactory,
 	openAIGatewayService *OpenAIGatewayService,
+	windowRecorder *CodexWindowRecorder,
 ) *OpenAIQuotaService {
 	service := NewOpenAIQuotaService(accountRepo, proxyRepo, tokenProvider, privacyClientFactory)
 	service.agentIdentityWS = openAIGatewayService
+	service.SetCodexWindowObserver(windowRecorder)
+	openAIGatewayService.SetCodexWindowObserver(windowRecorder)
 	return service
 }
 
@@ -202,6 +209,8 @@ func ProvideAccountUsageService(
 	identityCache IdentityCache,
 	tlsFPProfileService *TLSFingerprintProfileService,
 	openAIGatewayService *OpenAIGatewayService,
+	windowRecorder *CodexWindowRecorder,
+	windowRepo AccountUsageWindowRepository,
 ) *AccountUsageService {
 	service := NewAccountUsageService(
 		accountRepo,
@@ -217,6 +226,9 @@ func ProvideAccountUsageService(
 		tlsFPProfileService,
 	)
 	service.agentIdentityWS = openAIGatewayService
+	service.SetWindowObserver(windowRecorder)
+	service.SetWindowRepo(windowRepo)
+	openAIGatewayService.SetCodexWindowObserver(windowRecorder)
 	return service
 }
 
@@ -812,6 +824,7 @@ var ProviderSet = wire.NewSet(
 	ProvideAntigravityTokenProvider,
 	ProvideGrokTokenProvider,
 	ProvideOpenAITokenProvider,
+	ProvideCodexWindowRecorder,
 	ProvideOpenAIQuotaService,
 	ProvideGrokQuotaService,
 	ProvideClaudeTokenProvider,

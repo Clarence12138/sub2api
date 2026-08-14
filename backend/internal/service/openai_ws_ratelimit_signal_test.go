@@ -486,6 +486,56 @@ func TestOpenAIGatewayService_UpdateCodexUsageSnapshot_ThrottlesExtraWrites(t *t
 	}
 }
 
+type recordingWindowObserver struct {
+	samples []CodexWindowSample
+}
+
+func (o *recordingWindowObserver) Observe(_ context.Context, _ int64, sample CodexWindowSample) {
+	o.samples = append(o.samples, sample)
+}
+
+func (o *recordingWindowObserver) CloseOpenWindows(context.Context, int64, string) error {
+	return nil
+}
+
+func TestOpenAIGatewayService_UpdateCodexUsageSnapshot_ObservesBeforeThrottle(t *testing.T) {
+	repo := &openAICodexSnapshotAsyncRepo{
+		updateExtraCh: make(chan map[string]any, 2),
+	}
+	observer := &recordingWindowObserver{}
+	svc := &OpenAIGatewayService{
+		accountRepo:           repo,
+		codexSnapshotThrottle: newAccountWriteThrottle(time.Hour),
+		codexWindowObserver:   observer,
+	}
+	snapshot := &OpenAICodexUsageSnapshot{
+		PrimaryUsedPercent:         ptrFloat64WS(94),
+		PrimaryResetAfterSeconds:   ptrIntWS(3600),
+		PrimaryWindowMinutes:       ptrIntWS(10080),
+		SecondaryUsedPercent:       ptrFloat64WS(22),
+		SecondaryResetAfterSeconds: ptrIntWS(1200),
+		SecondaryWindowMinutes:     ptrIntWS(300),
+	}
+
+	svc.updateCodexUsageSnapshot(context.Background(), 778, snapshot)
+	svc.updateCodexUsageSnapshot(context.Background(), 778, snapshot)
+
+	require.Len(t, observer.samples, 2)
+	require.NotNil(t, observer.samples[0].Used7dPercent)
+	require.InDelta(t, 94, *observer.samples[0].Used7dPercent, 0.001)
+
+	select {
+	case <-repo.updateExtraCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("等待第一次 codex 快照落库超时")
+	}
+	select {
+	case updates := <-repo.updateExtraCh:
+		t.Fatalf("unexpected second extra write: %v", updates)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
 func ptrFloat64WS(v float64) *float64 { return &v }
 func ptrIntWS(v int) *int             { return &v }
 

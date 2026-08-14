@@ -1520,6 +1520,52 @@ func (h *AccountHandler) GetStats(c *gin.Context) {
 	response.Success(c, stats)
 }
 
+// GetUsageWindows 返回账号官方重置窗口快照与按日模型用量。
+// GET /api/v1/admin/accounts/:id/usage-windows
+func (h *AccountHandler) GetUsageWindows(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+	if h.accountUsageService == nil {
+		response.BadRequest(c, "account usage service is not enabled")
+		return
+	}
+
+	days := 30
+	if daysStr := c.Query("days"); daysStr != "" {
+		if d, err := strconv.Atoi(daysStr); err == nil && d > 0 && d <= 90 {
+			days = d
+		}
+	}
+	windowType := strings.TrimSpace(c.Query("window_type"))
+	now := timezone.Now()
+	endTime := timezone.StartOfDay(now.AddDate(0, 0, 1))
+	startTime := timezone.StartOfDay(now.AddDate(0, 0, -days+1))
+	if from := strings.TrimSpace(c.Query("from")); from != "" {
+		if parsed, parseErr := time.Parse(time.RFC3339, from); parseErr == nil {
+			startTime = parsed
+		}
+	}
+	if to := strings.TrimSpace(c.Query("to")); to != "" {
+		if parsed, parseErr := time.Parse(time.RFC3339, to); parseErr == nil {
+			endTime = parsed
+		}
+	}
+
+	stats, err := h.accountUsageService.GetUsageWindows(c.Request.Context(), accountID, startTime, endTime, windowType)
+	if err != nil {
+		if strings.Contains(err.Error(), "invalid ") {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, stats)
+}
+
 // ClearError handles clearing account error
 // POST /api/v1/admin/accounts/:id/clear-error
 func (h *AccountHandler) ClearError(c *gin.Context) {

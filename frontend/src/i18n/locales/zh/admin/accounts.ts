@@ -1488,7 +1488,26 @@ export default {
         todayTokens: '今日 Token',
         todayCost: '今日费用',
         usageTrend: '30天费用与请求趋势',
-        noData: '该账号暂无使用数据'
+        noData: '该账号暂无使用数据',
+        tabCalendar: '日历',
+        tabWindows: '窗口分析',
+        windowsSubtitle: '按官方 5h/7d 重置窗口统计本站花费，并反推周限',
+        windowRange: '天数',
+        windowType: '窗口',
+        windowPeriod: '起止',
+        peakPercent: '峰值占比',
+        inferredLimit: '反推额度',
+        models: '模型',
+        windowOpen: '进行中',
+        lowConfidence: '样本不足',
+        noWindowSnapshots: '还没有已封存的官方窗口。上线后随探测/请求开始积累。',
+        dailyByModel: '按日 × 模型花费',
+        sevenDayLimitTrend: '7 天窗口用量与反推限额',
+        limitLoosening: '限额上升（好转）',
+        limitTightening: '限额下降（收紧）',
+        limitFlat: '限额持平',
+        limitInsufficient: '样本不足，暂无法判断斜率',
+        limitTrendHint: '用本站标准花费 ÷ 官方峰值占比反推。只统计本站流量，chatgpt.com 或其他中转的消耗会让额度偏低。'
       }
     },
 

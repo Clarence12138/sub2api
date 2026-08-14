@@ -304,6 +304,22 @@ type AccountUsageService struct {
 	tlsFPProfileService     *TLSFingerprintProfileService
 	agentIdentityTaskMu     sync.Mutex
 	agentIdentityWS         agentIdentityWSConnectionInvalidator
+	windowRepo              AccountUsageWindowRepository
+	windowObserver          CodexWindowObserver
+}
+
+func (s *AccountUsageService) SetWindowRepo(repo AccountUsageWindowRepository) {
+	if s == nil {
+		return
+	}
+	s.windowRepo = repo
+}
+
+func (s *AccountUsageService) SetWindowObserver(observer CodexWindowObserver) {
+	if s == nil {
+		return
+	}
+	s.windowObserver = observer
 }
 
 // NewAccountUsageService 创建AccountUsageService实例
@@ -721,6 +737,7 @@ func (s *AccountUsageService) getOpenAIUsage(ctx context.Context, account *Accou
 			if s.openAIQuotaService != nil {
 				if quotaUsage, err := s.openAIQuotaService.QueryUsage(ctx, account.ID); err == nil {
 					if updates := buildCodexSparkWindowExtraUpdates(quotaUsage, now); len(updates) > 0 {
+						observeCodexWindow(s.windowObserver, account.ID, sampleFromCodexExtra(updates, now, usagestats.AccountWindowClosedProbe))
 						mergeAccountExtra(account, updates)
 						s.persistOpenAICodexProbeSnapshot(account.ID, updates)
 						if usage.UpdatedAt == nil {
@@ -897,6 +914,7 @@ func (s *AccountUsageService) probeOpenAICodexSnapshot(ctx context.Context, acco
 		return nil, err
 	}
 	if len(updates) > 0 {
+		observeCodexWindow(s.windowObserver, account.ID, sampleFromCodexExtra(updates, time.Now(), usagestats.AccountWindowClosedProbe))
 		s.persistOpenAICodexProbeSnapshot(account.ID, updates)
 		return updates, nil
 	}

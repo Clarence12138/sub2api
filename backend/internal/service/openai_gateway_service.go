@@ -459,6 +459,7 @@ type OpenAIGatewayService struct {
 	openaiWSRetryMetrics                openAIWSRetryMetrics
 	responseHeaderFilter                *responseheaders.CompiledHeaderFilter
 	codexSnapshotThrottle               *accountWriteThrottle
+	codexWindowObserver                 CodexWindowObserver
 	codexModelsManifestCache            codexModelsManifestCache
 	openaiCompatSessionResponses        sync.Map
 	openaiCompatAnthropicDigestSessions sync.Map
@@ -540,6 +541,13 @@ func NewOpenAIGatewayService(
 	}
 	svc.logOpenAIWSModeBootstrap()
 	return svc
+}
+
+func (s *OpenAIGatewayService) SetCodexWindowObserver(observer CodexWindowObserver) {
+	if s == nil {
+		return
+	}
+	s.codexWindowObserver = observer
 }
 
 // ResolveChannelMapping 解析渠道级模型映射（代理到 ChannelService）
