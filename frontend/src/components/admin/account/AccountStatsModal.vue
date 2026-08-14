@@ -534,13 +534,31 @@
         </div>
 
         <div class="card p-4">
-          <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
-            {{ t('admin.accounts.stats.sevenDayLimitTrend') }}
-          </h3>
-          <div class="h-64">
-            <Line v-if="limitTrendChartData" :data="limitTrendChartData" :options="limitTrendChartOptions" />
+          <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+              {{ t('admin.accounts.stats.costVsPercentTitle') }}
+            </h3>
+            <select
+              v-model="selectedWindowKey"
+              data-test="window-selector"
+              class="rounded-md border border-gray-200 bg-white px-2 py-1 text-sm dark:border-dark-500 dark:bg-dark-700 dark:text-gray-100"
+            >
+              <option
+                v-for="row in selectableWindows"
+                :key="windowKey(row)"
+                :value="windowKey(row)"
+              >
+                {{ formatWindowOption(row) }}
+              </option>
+            </select>
+          </div>
+          <p class="mb-3 text-[11px] text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.stats.costVsPercentHint') }}
+          </p>
+          <div class="h-72">
+            <Scatter v-if="costPercentChartData" :data="costPercentChartData" :options="costPercentChartOptions" />
             <div v-else class="flex h-full items-center justify-center text-sm text-gray-500">
-              {{ t('admin.accounts.stats.noWindowSnapshots') }}
+              {{ t('admin.accounts.stats.noWindowSamples') }}
             </div>
           </div>
         </div>
@@ -581,9 +599,10 @@ import {
   Title,
   Tooltip,
   Legend,
-  Filler
+  Filler,
+  ScatterController
 } from 'chart.js'
-import { Line } from 'vue-chartjs'
+import { Line, Scatter } from 'vue-chartjs'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
@@ -606,7 +625,8 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
-  Filler
+  Filler,
+  ScatterController
 )
 
 const { t } = useI18n()
@@ -626,6 +646,7 @@ const stats = ref<AccountUsageStatsResponse | null>(null)
 const windowStats = ref<AccountUsageWindowsResponse | null>(null)
 const activeTab = ref<'calendar' | 'windows'>('calendar')
 const windowDays = ref(30)
+const selectedWindowKey = ref('')
 
 const MODEL_COLORS = ['#3b82f6', '#10b981', '#f97316', '#8b5cf6', '#ef4444', '#14b8a6', '#eab308']
 
@@ -809,64 +830,110 @@ const dailyModelChartOptions = computed(() => ({
   }
 }))
 
-const sevenDayWindows = computed(() =>
+const selectableWindows = computed(() =>
   (windowStats.value?.windows ?? []).filter((w) => w.window_type === '7d')
 )
 
-const limitTrendChartData = computed(() => {
-  const rows = sevenDayWindows.value
+const selectedWindow = computed(() => {
+  const rows = selectableWindows.value
   if (!rows.length) return null
-  return {
-    labels: rows.map((w) => formatShortDate(w.window_end)),
-    datasets: [
-      {
-        label: t('admin.accounts.stats.standardCost') + ' (USD)',
-        data: rows.map((w) => w.standard_cost),
-        borderColor: '#3b82f6',
-        backgroundColor: 'rgba(59, 130, 246, 0.08)',
-        fill: true,
-        tension: 0.25,
-        yAxisID: 'y'
-      },
-      {
-        label: t('admin.accounts.stats.inferredLimit') + ' (USD)',
-        data: rows.map((w) => (w.inferred_limit_usd != null && w.inferred_confidence !== 'low' ? w.inferred_limit_usd : null)),
-        borderColor: '#f97316',
-        borderDash: [6, 4],
-        backgroundColor: 'transparent',
-        fill: false,
-        spanGaps: false,
-        tension: 0,
-        yAxisID: 'y'
-      },
-      {
-        label: t('admin.accounts.stats.peakPercent'),
-        data: rows.map((w) => w.peak_used_percent),
-        borderColor: '#8b5cf6',
-        backgroundColor: 'transparent',
-        fill: false,
-        tension: 0.25,
-        yAxisID: 'y1'
-      }
-    ]
-  }
+  return rows.find((w) => windowKey(w) === selectedWindowKey.value) ?? rows[rows.length - 1]
 })
 
-const limitTrendChartOptions = computed(() => ({
-  ...lineChartOptions.value,
+const costPercentChartData = computed(() => {
+  const row = selectedWindow.value
+  const samples = row?.samples ?? []
+  if (!samples.length) return null
+  const points = samples.map((s) => ({ x: s.standard_cost, y: s.used_percent }))
+  const last = points[points.length - 1]
+  const inferred =
+    row?.inferred_limit_usd && row.inferred_confidence !== 'low' ? row.inferred_limit_usd : null
+  const limitX = inferred && inferred > 0 ? inferred : last.y > 0 ? last.x / (last.y / 100) : 0
+  const datasets: Array<Record<string, unknown>> = [
+    {
+      label: t('admin.accounts.stats.observedPoints'),
+      data: points,
+      showLine: true,
+      borderColor: '#3b82f6',
+      backgroundColor: '#3b82f6',
+      pointRadius: 3,
+      tension: 0
+    }
+  ]
+  if (limitX > 0) {
+    datasets.push({
+      label: t('admin.accounts.stats.inferredLimitLine'),
+      data: [
+        { x: 0, y: 0 },
+        { x: limitX, y: 100 }
+      ],
+      showLine: true,
+      borderColor: '#f97316',
+      borderDash: [6, 4],
+      backgroundColor: 'transparent',
+      pointRadius: 0,
+      tension: 0
+    })
+  }
+  return { datasets }
+})
+
+const costPercentChartOptions = computed(() => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  parsing: false,
+  interaction: {
+    intersect: false,
+    mode: 'nearest' as const
+  },
+  plugins: {
+    legend: {
+      position: 'top' as const,
+      labels: {
+        color: chartColors.value.text,
+        usePointStyle: true,
+        pointStyle: 'circle',
+        padding: 15,
+        font: { size: 11 }
+      }
+    },
+    tooltip: {
+      callbacks: {
+        label: (context: { dataset?: { label?: string }; parsed: { x: number; y: number } }) => {
+          const label = context.dataset?.label || ''
+          return `${label}: $${formatCost(context.parsed.x)} / ${context.parsed.y.toFixed(1)}%`
+        }
+      }
+    }
+  },
   scales: {
-    ...lineChartOptions.value.scales,
-    y1: {
-      ...lineChartOptions.value.scales.y1,
+    x: {
+      type: 'linear' as const,
+      min: 0,
       title: {
         display: true,
-        text: t('admin.accounts.stats.peakPercent'),
-        color: '#8b5cf6',
+        text: t('admin.accounts.stats.costAxis'),
+        color: chartColors.value.text,
         font: { size: 11 }
       },
+      grid: { color: chartColors.value.grid },
       ticks: {
-        ...lineChartOptions.value.scales.y1.ticks,
-        color: '#8b5cf6',
+        color: chartColors.value.text,
+        callback: (value: string | number) => '$' + formatCost(Number(value))
+      }
+    },
+    y: {
+      type: 'linear' as const,
+      min: 0,
+      title: {
+        display: true,
+        text: t('admin.accounts.stats.percentAxis'),
+        color: chartColors.value.text,
+        font: { size: 11 }
+      },
+      grid: { color: chartColors.value.grid },
+      ticks: {
+        color: chartColors.value.text,
         callback: (value: string | number) => `${Number(value).toFixed(0)}%`
       }
     }
@@ -940,6 +1007,9 @@ const loadWindowStats = async () => {
     windowStats.value = await adminAPI.accounts.getUsageWindows(props.account.id, {
       days: windowDays.value
     })
+    const rows = (windowStats.value.windows ?? []).filter((w) => w.window_type === '7d')
+    const current = rows.find((w) => w.status === 'open') ?? rows[rows.length - 1]
+    selectedWindowKey.value = current ? windowKey(current) : ''
   } catch (error) {
     console.error('Failed to load account usage windows:', error)
     windowStats.value = null
@@ -956,6 +1026,15 @@ function formatShortDate(value: string): string {
 
 function formatWindowRange(row: AccountUsageWindow): string {
   return `${formatShortDate(row.window_start)} – ${formatShortDate(row.window_end)}`
+}
+
+function windowKey(row: AccountUsageWindow): string {
+  return `${row.id || 0}:${row.window_end}`
+}
+
+function formatWindowOption(row: AccountUsageWindow): string {
+  const status = row.status === 'open' ? t('admin.accounts.stats.windowOpen') : t('admin.accounts.stats.windowClosed')
+  return `${formatWindowRange(row)} · ${status}`
 }
 
 function formatModelBreakdown(models: AccountWindowModelStat[]): string {

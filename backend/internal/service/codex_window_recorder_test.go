@@ -11,7 +11,9 @@ import (
 
 type windowRepoStub struct {
 	open       map[string]*usagestats.AccountUsageWindow
+	closed     map[string]*usagestats.AccountUsageWindow
 	list       []usagestats.AccountUsageWindow
+	trajectory map[int64][]usagestats.AccountWindowSample
 	upserts    int
 	samples    int
 	rolls      int
@@ -27,10 +29,12 @@ type windowRepoStub struct {
 
 func newWindowRepoStub() *windowRepoStub {
 	return &windowRepoStub{
-		open:   map[string]*usagestats.AccountUsageWindow{},
-		nextID: 1,
-		stats:  &usagestats.AccountStats{Requests: 3, Tokens: 30, Cost: 1.2, StandardCost: 4, UserCost: 0.8},
-		models: []usagestats.AccountWindowModelStat{{Model: "gpt-5.6-luna", Requests: 2, StandardCost: 3}},
+		open:       map[string]*usagestats.AccountUsageWindow{},
+		closed:     map[string]*usagestats.AccountUsageWindow{},
+		trajectory: map[int64][]usagestats.AccountWindowSample{},
+		nextID:     1,
+		stats:      &usagestats.AccountStats{Requests: 3, Tokens: 30, Cost: 1.2, StandardCost: 4, UserCost: 0.8},
+		models:     []usagestats.AccountWindowModelStat{{Model: "gpt-5.6-luna", Requests: 2, StandardCost: 3}},
 	}
 }
 
@@ -82,6 +86,8 @@ func (s *windowRepoStub) CloseAndOpen(_ context.Context, closed *usagestats.Acco
 	if s.rollErr != nil {
 		return s.rollErr
 	}
+	closedCopy := *closed
+	s.closed[closed.WindowType] = &closedCopy
 	delete(s.open, closed.WindowType)
 	if next.ID == 0 {
 		next.ID = s.nextID
@@ -114,6 +120,33 @@ func (s *windowRepoStub) ModelUsage(context.Context, int64, time.Time, time.Time
 }
 func (s *windowRepoStub) DailyModelUsage(context.Context, int64, time.Time, time.Time) ([]usagestats.AccountDailyModelStat, error) {
 	return nil, nil
+}
+func (s *windowRepoStub) GetLatestClosed(_ context.Context, _ int64, windowType string) (*usagestats.AccountUsageWindow, error) {
+	row := s.closed[windowType]
+	if row == nil {
+		return nil, nil
+	}
+	copy := *row
+	return &copy, nil
+}
+func (s *windowRepoStub) LastTrajectorySample(_ context.Context, windowID int64) (*usagestats.AccountWindowSample, error) {
+	items := s.trajectory[windowID]
+	if len(items) == 0 {
+		return nil, nil
+	}
+	last := items[len(items)-1]
+	return &last, nil
+}
+func (s *windowRepoStub) InsertTrajectorySample(_ context.Context, windowID int64, sample usagestats.AccountWindowSample) error {
+	s.trajectory[windowID] = append(s.trajectory[windowID], sample)
+	return nil
+}
+func (s *windowRepoStub) ListTrajectorySamples(_ context.Context, windowIDs []int64) (map[int64][]usagestats.AccountWindowSample, error) {
+	out := map[int64][]usagestats.AccountWindowSample{}
+	for _, id := range windowIDs {
+		out[id] = s.trajectory[id]
+	}
+	return out, nil
 }
 
 func TestCodexWindowRecorder_SameWindowRaisesPeak(t *testing.T) {
@@ -152,7 +185,9 @@ func TestCodexWindowRecorder_ResetAtJumpClosesAndOpens(t *testing.T) {
 	require.Equal(t, 1, repo.rolls)
 	open := repo.open[usagestats.AccountWindowType5h]
 	require.Equal(t, nextEnd, open.WindowEnd)
+	require.Equal(t, firstEnd, open.WindowStart)
 	require.InDelta(t, 1.0, open.PeakUsedPercent, 0.001)
+	require.NotEmpty(t, repo.trajectory[open.ID])
 }
 
 func TestInferAccountWindowLimit(t *testing.T) {

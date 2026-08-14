@@ -29,13 +29,27 @@ func (s *AccountUsageService) GetUsageWindows(ctx context.Context, accountID int
 	if windows == nil {
 		windows = []usagestats.AccountUsageWindow{}
 	}
+	ids := make([]int64, 0, len(windows))
 	for i := range windows {
-		if windows[i].Status != usagestats.AccountWindowStatusOpen {
-			continue
+		if windows[i].Status == usagestats.AccountWindowStatusOpen {
+			if err := enrichOpenUsageWindow(ctx, s.windowRepo, &windows[i]); err != nil {
+				return nil, err
+			}
 		}
-		if err := enrichOpenUsageWindow(ctx, s.windowRepo, &windows[i]); err != nil {
-			return nil, err
+		if windows[i].ID > 0 {
+			ids = append(ids, windows[i].ID)
 		}
+	}
+	samplesByWindow, err := s.windowRepo.ListTrajectorySamples(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("list window samples: %w", err)
+	}
+	for i := range windows {
+		samples := samplesByWindow[windows[i].ID]
+		if len(samples) == 0 {
+			samples = fallbackWindowSamples(windows[i])
+		}
+		windows[i].Samples = samples
 	}
 
 	daily, err := s.windowRepo.DailyModelUsage(ctx, accountID, start, end)
@@ -74,6 +88,22 @@ func enrichOpenUsageWindow(ctx context.Context, repo AccountUsageWindowRepositor
 	row.InferredLimitUSD = limit
 	row.InferredConfidence = confidence
 	return nil
+}
+
+func fallbackWindowSamples(row usagestats.AccountUsageWindow) []usagestats.AccountWindowSample {
+	if row.PeakUsedPercent <= 0 && row.StandardCost <= 0 {
+		return []usagestats.AccountWindowSample{}
+	}
+	sampledAt := row.SampledAt
+	if sampledAt.IsZero() {
+		sampledAt = row.WindowEnd
+	}
+	return []usagestats.AccountWindowSample{{
+		SampledAt:    sampledAt,
+		UsedPercent:  row.PeakUsedPercent,
+		StandardCost: row.StandardCost,
+		LocalCost:    row.LocalCost,
+	}}
 }
 
 func sampleFromCodexExtra(updates map[string]any, now time.Time, reason string) CodexWindowSample {

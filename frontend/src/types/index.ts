@@ -2211,7 +2211,15 @@ export interface AccountUsageWindow {
   inferred_limit_usd: number | null
   inferred_confidence: 'high' | 'medium' | 'low' | string
   model_breakdown: AccountWindowModelStat[]
+  samples?: AccountWindowSample[]
   sampled_at: string
+}
+
+export interface AccountWindowSample {
+  sampled_at: string
+  used_percent: number
+  standard_cost: number
+  local_cost: number
 }
 
 export interface AccountDailyModelStat {

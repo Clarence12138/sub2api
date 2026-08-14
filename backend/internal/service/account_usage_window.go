@@ -15,7 +15,10 @@ const (
 	// accountWindowMediumPercent 低于此峰值为中等置信。
 	accountWindowMediumPercent = 20.0
 	// accountWindowSlopeFlatUSD 周斜率绝对值低于此值视为持平。
-	accountWindowSlopeFlatUSD = 0.5
+	accountWindowSlopeFlatUSD          = 0.5
+	accountWindowSampleMinPercentDelta = 0.3
+	accountWindowSampleMinCostDelta    = 0.25
+	accountWindowSampleMinInterval     = 5 * time.Minute
 )
 
 // CodexWindowSample 一次官方 5h/7d 采样。缺字段表示这次没看到该窗。
@@ -42,6 +45,10 @@ type AccountUsageWindowRepository interface {
 	CloseAndOpen(ctx context.Context, closed *usagestats.AccountUsageWindow, next *usagestats.AccountUsageWindow) error
 	CloseWindows(ctx context.Context, rows []*usagestats.AccountUsageWindow) error
 	List(ctx context.Context, accountID int64, start, end time.Time, windowType string) ([]usagestats.AccountUsageWindow, error)
+	GetLatestClosed(ctx context.Context, accountID int64, windowType string) (*usagestats.AccountUsageWindow, error)
+	LastTrajectorySample(ctx context.Context, windowID int64) (*usagestats.AccountWindowSample, error)
+	InsertTrajectorySample(ctx context.Context, windowID int64, sample usagestats.AccountWindowSample) error
+	ListTrajectorySamples(ctx context.Context, windowIDs []int64) (map[int64][]usagestats.AccountWindowSample, error)
 	SumUsage(ctx context.Context, accountID int64, start, end time.Time) (*usagestats.AccountStats, error)
 	ModelUsage(ctx context.Context, accountID int64, start, end time.Time) ([]usagestats.AccountWindowModelStat, error)
 	DailyModelUsage(ctx context.Context, accountID int64, start, end time.Time) ([]usagestats.AccountDailyModelStat, error)
@@ -92,4 +99,24 @@ func sameAccountWindow(prevEnd, nextEnd time.Time) bool {
 		delta = -delta
 	}
 	return delta <= accountWindowRollSkew
+}
+
+func shouldKeepTrajectorySample(prev *usagestats.AccountWindowSample, next usagestats.AccountWindowSample) bool {
+	if prev == nil {
+		return true
+	}
+	if absFloat(next.UsedPercent-prev.UsedPercent) >= accountWindowSampleMinPercentDelta {
+		return true
+	}
+	if absFloat(next.StandardCost-prev.StandardCost) >= accountWindowSampleMinCostDelta {
+		return true
+	}
+	return next.SampledAt.Sub(prev.SampledAt) >= accountWindowSampleMinInterval
+}
+
+func absFloat(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }

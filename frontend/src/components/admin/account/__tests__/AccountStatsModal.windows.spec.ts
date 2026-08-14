@@ -31,6 +31,11 @@ vi.mock('vue-chartjs', () => ({
     name: 'Line',
     props: ['data', 'options'],
     template: '<div class="chart-line" />'
+  },
+  Scatter: {
+    name: 'Scatter',
+    props: ['data', 'options'],
+    template: '<div class="chart-scatter" data-test="cost-percent-chart" />'
   }
 }))
 
@@ -64,6 +69,10 @@ function makeWindowResponse(): AccountUsageWindowsResponse {
         inferred_limit_usd: 30,
         inferred_confidence: 'high',
         model_breakdown: [{ model: 'gpt-5.6-luna', requests: 2, tokens: 50, standard_cost: 7, account_cost: 6 }],
+        samples: [
+          { sampled_at: '2026-08-02T00:00:00Z', used_percent: 10, standard_cost: 3, local_cost: 2 },
+          { sampled_at: '2026-08-08T00:00:00Z', used_percent: 40, standard_cost: 12, local_cost: 10 }
+        ],
         sampled_at: '2026-08-08T00:00:00Z'
       }
     ],
@@ -121,6 +130,8 @@ describe('AccountStatsModal windows tab', () => {
 
     expect(getUsageWindows).toHaveBeenCalledWith(9, { days: 30 })
     expect(wrapper.get('[data-test="limit-trend-badge"]').text()).toContain('limitLoosening')
+    expect(wrapper.get('[data-test="window-selector"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="cost-percent-chart"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('gpt-5.6-luna')
     expect(wrapper.text()).toContain('$30.00')
   })

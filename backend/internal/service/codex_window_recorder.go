@@ -73,20 +73,34 @@ func (r *CodexWindowRecorder) observeOne(
 		slog.Warn("codex_window_get_open_failed", "account_id", accountID, "window_type", windowType, "error", err)
 		return
 	}
-	next := buildOpenWindow(accountID, windowType, percent, resetAt, now)
+	if open != nil && (resetAt == nil || sameAccountWindow(open.WindowEnd, resetAt.UTC())) {
+		if err := r.repo.UpdateSample(ctx, open.ID, percent, percent, now); err != nil {
+			slog.Warn("codex_window_sample_failed", "account_id", accountID, "window_type", windowType, "error", err)
+		}
+		r.recordTrajectory(ctx, open, percent, now)
+		return
+	}
+
+	var prevEnd *time.Time
+	if open != nil {
+		end := open.WindowEnd
+		prevEnd = &end
+	} else if last, lastErr := r.repo.GetLatestClosed(ctx, accountID, windowType); lastErr != nil {
+		slog.Warn("codex_window_latest_closed_failed", "account_id", accountID, "window_type", windowType, "error", lastErr)
+	} else if last != nil {
+		end := last.WindowEnd
+		prevEnd = &end
+	}
+	next := buildOpenWindow(accountID, windowType, percent, resetAt, now, prevEnd)
 	if next == nil {
 		return
 	}
 	if open == nil {
 		if err := r.repo.UpsertOpen(ctx, next); err != nil {
 			slog.Warn("codex_window_open_failed", "account_id", accountID, "window_type", windowType, "error", err)
+			return
 		}
-		return
-	}
-	if sameAccountWindow(open.WindowEnd, next.WindowEnd) {
-		if err := r.repo.UpdateSample(ctx, open.ID, percent, percent, now); err != nil {
-			slog.Warn("codex_window_sample_failed", "account_id", accountID, "window_type", windowType, "error", err)
-		}
+		r.recordTrajectory(ctx, next, percent, now)
 		return
 	}
 	if err := r.settle(ctx, open, defaultWindowClosedReason(reason, open.WindowEnd, now), now); err != nil {
@@ -95,6 +109,44 @@ func (r *CodexWindowRecorder) observeOne(
 	}
 	if err := r.repo.CloseAndOpen(ctx, open, next); err != nil {
 		slog.Warn("codex_window_roll_failed", "account_id", accountID, "window_type", windowType, "error", err)
+		return
+	}
+	r.recordTrajectory(ctx, next, percent, now)
+}
+
+func (r *CodexWindowRecorder) recordTrajectory(ctx context.Context, row *usagestats.AccountUsageWindow, percent float64, now time.Time) {
+	if row == nil || row.ID <= 0 {
+		return
+	}
+	end := now
+	if !row.WindowEnd.IsZero() && now.After(row.WindowEnd) {
+		end = row.WindowEnd
+	}
+	stats, err := r.repo.SumUsage(ctx, row.AccountID, row.WindowStart, end)
+	if err != nil {
+		slog.Warn("codex_window_trajectory_usage_failed", "window_id", row.ID, "error", err)
+		return
+	}
+	point := usagestats.AccountWindowSample{
+		SampledAt:    now,
+		UsedPercent:  percent,
+		StandardCost: 0,
+		LocalCost:    0,
+	}
+	if stats != nil {
+		point.StandardCost = stats.StandardCost
+		point.LocalCost = stats.Cost
+	}
+	prev, err := r.repo.LastTrajectorySample(ctx, row.ID)
+	if err != nil {
+		slog.Warn("codex_window_last_sample_failed", "window_id", row.ID, "error", err)
+		return
+	}
+	if !shouldKeepTrajectorySample(prev, point) {
+		return
+	}
+	if err := r.repo.InsertTrajectorySample(ctx, row.ID, point); err != nil {
+		slog.Warn("codex_window_insert_sample_failed", "window_id", row.ID, "error", err)
 	}
 }
 
@@ -123,7 +175,7 @@ func (r *CodexWindowRecorder) settle(ctx context.Context, row *usagestats.Accoun
 	return nil
 }
 
-func buildOpenWindow(accountID int64, windowType string, percent float64, resetAt *time.Time, now time.Time) *usagestats.AccountUsageWindow {
+func buildOpenWindow(accountID int64, windowType string, percent float64, resetAt *time.Time, now time.Time, prevEnd *time.Time) *usagestats.AccountUsageWindow {
 	duration := windowDuration(windowType)
 	if duration <= 0 {
 		return nil
@@ -133,6 +185,9 @@ func buildOpenWindow(accountID int64, windowType string, percent float64, resetA
 		end = resetAt.UTC()
 	}
 	start := end.Add(-duration)
+	if prevEnd != nil && !prevEnd.IsZero() && prevEnd.Before(end) {
+		start = prevEnd.UTC()
+	}
 	if !end.After(start) {
 		return nil
 	}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/lib/pq"
 )
 
 type accountUsageWindowRepository struct {
@@ -37,31 +38,7 @@ func (r *accountUsageWindowRepository) GetOpen(ctx context.Context, accountID in
 }
 
 func (r *accountUsageWindowRepository) UpsertOpen(ctx context.Context, row *usagestats.AccountUsageWindow) error {
-	if row == nil {
-		return nil
-	}
-	breakdown, err := json.Marshal(row.ModelBreakdown)
-	if err != nil {
-		return err
-	}
-	if row.ModelBreakdown == nil {
-		breakdown = []byte("[]")
-	}
-	_, err = r.sql.ExecContext(ctx, `
-		INSERT INTO account_usage_windows (
-			account_id, window_type, window_start, window_end, status,
-			peak_used_percent, last_used_percent, inferred_confidence,
-			model_breakdown, sampled_at
-		) VALUES ($1,$2,$3,$4,'open',$5,$6,'low',$7,$8)
-		ON CONFLICT (account_id, window_type, window_end) DO UPDATE SET
-			peak_used_percent = GREATEST(account_usage_windows.peak_used_percent, EXCLUDED.peak_used_percent),
-			last_used_percent = EXCLUDED.last_used_percent,
-			sampled_at = EXCLUDED.sampled_at,
-			updated_at = NOW()
-		WHERE account_usage_windows.status = 'open'
-	`, row.AccountID, row.WindowType, row.WindowStart, row.WindowEnd,
-		row.PeakUsedPercent, row.LastUsedPercent, breakdown, row.SampledAt)
-	return err
+	return upsertOpenWith(ctx, r.sql, row)
 }
 
 func (r *accountUsageWindowRepository) UpdateSample(ctx context.Context, id int64, peakPercent, lastPercent float64, sampledAt time.Time) error {
@@ -172,7 +149,8 @@ func upsertOpenWith(ctx context.Context, exec sqlExecutor, row *usagestats.Accou
 	if row.ModelBreakdown == nil {
 		breakdown = []byte("[]")
 	}
-	_, err = exec.ExecContext(ctx, `
+	var id int64
+	err = scanSingleRow(ctx, exec, `
 		INSERT INTO account_usage_windows (
 			account_id, window_type, window_start, window_end, status,
 			peak_used_percent, last_used_percent, inferred_confidence,
@@ -184,9 +162,94 @@ func upsertOpenWith(ctx context.Context, exec sqlExecutor, row *usagestats.Accou
 			sampled_at = EXCLUDED.sampled_at,
 			updated_at = NOW()
 		WHERE account_usage_windows.status = 'open'
-	`, row.AccountID, row.WindowType, row.WindowStart, row.WindowEnd,
-		row.PeakUsedPercent, row.LastUsedPercent, breakdown, row.SampledAt)
+		RETURNING id
+	`, []any{row.AccountID, row.WindowType, row.WindowStart, row.WindowEnd,
+		row.PeakUsedPercent, row.LastUsedPercent, breakdown, row.SampledAt}, &id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	row.ID = id
+	return nil
+}
+
+func (r *accountUsageWindowRepository) GetLatestClosed(ctx context.Context, accountID int64, windowType string) (*usagestats.AccountUsageWindow, error) {
+	row, err := r.scanOne(ctx, r.sql, `
+		SELECT id, account_id, window_type, window_start, window_end, status,
+			COALESCE(closed_reason, ''), peak_used_percent, last_used_percent,
+			local_cost, standard_cost, user_cost, requests, tokens,
+			inferred_limit_usd, inferred_confidence, model_breakdown, sampled_at
+		FROM account_usage_windows
+		WHERE account_id = $1 AND window_type = $2 AND status = 'closed'
+		ORDER BY window_end DESC
+		LIMIT 1
+	`, accountID, windowType)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return row, err
+}
+
+func (r *accountUsageWindowRepository) LastTrajectorySample(ctx context.Context, windowID int64) (*usagestats.AccountWindowSample, error) {
+	if windowID <= 0 {
+		return nil, nil
+	}
+	var sample usagestats.AccountWindowSample
+	err := scanSingleRow(ctx, r.sql, `
+		SELECT sampled_at, used_percent, standard_cost, local_cost
+		FROM account_usage_window_samples
+		WHERE window_id = $1
+		ORDER BY sampled_at DESC, id DESC
+		LIMIT 1
+	`, []any{windowID}, &sample.SampledAt, &sample.UsedPercent, &sample.StandardCost, &sample.LocalCost)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &sample, nil
+}
+
+func (r *accountUsageWindowRepository) InsertTrajectorySample(ctx context.Context, windowID int64, sample usagestats.AccountWindowSample) error {
+	if windowID <= 0 {
+		return nil
+	}
+	_, err := r.sql.ExecContext(ctx, `
+		INSERT INTO account_usage_window_samples (window_id, sampled_at, used_percent, standard_cost, local_cost)
+		VALUES ($1,$2,$3,$4,$5)
+	`, windowID, sample.SampledAt, sample.UsedPercent, sample.StandardCost, sample.LocalCost)
 	return err
+}
+
+func (r *accountUsageWindowRepository) ListTrajectorySamples(ctx context.Context, windowIDs []int64) (map[int64][]usagestats.AccountWindowSample, error) {
+	out := make(map[int64][]usagestats.AccountWindowSample, len(windowIDs))
+	if len(windowIDs) == 0 {
+		return out, nil
+	}
+	rows, err := r.sql.QueryContext(ctx, `
+		SELECT window_id, sampled_at, used_percent, standard_cost, local_cost
+		FROM account_usage_window_samples
+		WHERE window_id = ANY($1)
+		ORDER BY window_id ASC, sampled_at ASC, id ASC
+	`, pq.Array(windowIDs))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var (
+			windowID int64
+			sample   usagestats.AccountWindowSample
+		)
+		if err := rows.Scan(&windowID, &sample.SampledAt, &sample.UsedPercent, &sample.StandardCost, &sample.LocalCost); err != nil {
+			return nil, err
+		}
+		out[windowID] = append(out[windowID], sample)
+	}
+	return out, rows.Err()
 }
 
 func (r *accountUsageWindowRepository) List(ctx context.Context, accountID int64, start, end time.Time, windowType string) ([]usagestats.AccountUsageWindow, error) {
