@@ -26,7 +26,6 @@ func (r *CodexWindowRecorder) Observe(ctx context.Context, accountID int64, samp
 	if now.IsZero() {
 		now = time.Now()
 	}
-	r.observeOne(ctx, accountID, usagestats.AccountWindowType5h, sample.Used5hPercent, sample.Reset5hAt, sample.ClosedReason, now)
 	r.observeOne(ctx, accountID, usagestats.AccountWindowType7d, sample.Used7dPercent, sample.Reset7dAt, sample.ClosedReason, now)
 }
 
@@ -36,7 +35,7 @@ func (r *CodexWindowRecorder) CloseOpenWindows(ctx context.Context, accountID in
 	}
 	now := time.Now()
 	var closed []*usagestats.AccountUsageWindow
-	for _, windowType := range []string{usagestats.AccountWindowType5h, usagestats.AccountWindowType7d} {
+	for _, windowType := range []string{usagestats.AccountWindowType7d} {
 		open, err := r.repo.GetOpen(ctx, accountID, windowType)
 		if err != nil {
 			return err

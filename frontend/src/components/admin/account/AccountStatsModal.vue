@@ -492,7 +492,7 @@
             </thead>
             <tbody>
               <tr
-                v-for="row in windowStats.windows"
+                v-for="row in tableWindows"
                 :key="`${row.window_type}-${row.window_end}`"
                 class="border-t border-gray-100 dark:border-dark-600"
               >
@@ -512,7 +512,7 @@
                 </td>
                 <td class="px-3 py-2 text-gray-600 dark:text-gray-300">{{ formatModelBreakdown(row.model_breakdown) }}</td>
               </tr>
-              <tr v-if="!windowStats.windows.length">
+              <tr v-if="!tableWindows.length">
                 <td colspan="6" class="px-3 py-6 text-center text-gray-400">
                   {{ t('admin.accounts.stats.noWindowSnapshots') }}
                 </td>
@@ -840,9 +840,11 @@ const dailyModelChartOptions = computed(() => ({
   }
 }))
 
-const selectableWindows = computed(() =>
+const tableWindows = computed(() =>
   (windowStats.value?.windows ?? []).filter((w) => w.window_type === '7d')
 )
+
+const selectableWindows = computed(() => tableWindows.value)
 
 const selectedWindow = computed(() => {
   const rows = selectableWindows.value

@@ -81,4 +81,6 @@ func TestAccountUsageService_GetUsageWindows_RejectsBadType(t *testing.T) {
 	svc := &AccountUsageService{windowRepo: newWindowRepoStub()}
 	_, err := svc.GetUsageWindows(context.Background(), 1, time.Now().Add(-time.Hour), time.Now(), "monthly")
 	require.Error(t, err)
+	_, err = svc.GetUsageWindows(context.Background(), 1, time.Now().Add(-time.Hour), time.Now(), "5h")
+	require.Error(t, err)
 }

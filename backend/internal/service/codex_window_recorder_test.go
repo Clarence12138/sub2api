@@ -156,16 +156,16 @@ func TestCodexWindowRecorder_SameWindowRaisesPeak(t *testing.T) {
 	reset := now.Add(2 * time.Hour)
 	used := 10.0
 	rec.Observe(context.Background(), 7, CodexWindowSample{
-		Used5hPercent: &used, Reset5hAt: &reset, Now: now,
+		Used7dPercent: &used, Reset7dAt: &reset, Now: now,
 	})
 	used = 22.0
 	rec.Observe(context.Background(), 7, CodexWindowSample{
-		Used5hPercent: &used, Reset5hAt: &reset, Now: now.Add(time.Minute),
+		Used7dPercent: &used, Reset7dAt: &reset, Now: now.Add(time.Minute),
 	})
 	require.Equal(t, 1, repo.upserts)
 	require.Equal(t, 1, repo.samples)
 	require.Equal(t, 0, repo.rolls)
-	require.InDelta(t, 22.0, repo.open[usagestats.AccountWindowType5h].PeakUsedPercent, 0.001)
+	require.InDelta(t, 22.0, repo.open[usagestats.AccountWindowType7d].PeakUsedPercent, 0.001)
 }
 
 func TestCodexWindowRecorder_ResetAtJumpClosesAndOpens(t *testing.T) {
@@ -175,15 +175,15 @@ func TestCodexWindowRecorder_ResetAtJumpClosesAndOpens(t *testing.T) {
 	firstEnd := now.Add(2 * time.Hour)
 	used := 40.0
 	rec.Observe(context.Background(), 7, CodexWindowSample{
-		Used5hPercent: &used, Reset5hAt: &firstEnd, Now: now,
+		Used7dPercent: &used, Reset7dAt: &firstEnd, Now: now,
 	})
 	nextEnd := firstEnd.Add(5 * time.Hour)
 	used = 1.0
 	rec.Observe(context.Background(), 7, CodexWindowSample{
-		Used5hPercent: &used, Reset5hAt: &nextEnd, Now: firstEnd.Add(time.Minute),
+		Used7dPercent: &used, Reset7dAt: &nextEnd, Now: firstEnd.Add(time.Minute),
 	})
 	require.Equal(t, 1, repo.rolls)
-	open := repo.open[usagestats.AccountWindowType5h]
+	open := repo.open[usagestats.AccountWindowType7d]
 	require.Equal(t, nextEnd, open.WindowEnd)
 	require.Equal(t, firstEnd, open.WindowStart)
 	require.InDelta(t, 1.0, open.PeakUsedPercent, 0.001)
@@ -213,11 +213,11 @@ func TestCodexWindowRecorder_CloseOpenWindowsSettles(t *testing.T) {
 	reset := now.Add(2 * time.Hour)
 	used := 40.0
 	rec.Observe(context.Background(), 7, CodexWindowSample{
-		Used5hPercent: &used, Reset5hAt: &reset, Now: now,
+		Used7dPercent: &used, Reset7dAt: &reset, Now: now,
 	})
 	require.NoError(t, rec.CloseOpenWindows(context.Background(), 7, usagestats.AccountWindowClosedResetCredit))
 	require.Equal(t, 1, repo.closes)
-	require.Nil(t, repo.open[usagestats.AccountWindowType5h])
+	require.Nil(t, repo.open[usagestats.AccountWindowType7d])
 }
 
 func TestBuildAccountWindowLimitTrend(t *testing.T) {

@@ -24,9 +24,10 @@ func (s *AccountUsageService) GetUsageWindows(ctx context.Context, accountID int
 	if end.Before(start) || end.Equal(start) {
 		return nil, fmt.Errorf("invalid time range")
 	}
-	switch windowType {
-	case "", usagestats.AccountWindowType5h, usagestats.AccountWindowType7d:
-	default:
+	if windowType == "" {
+		windowType = usagestats.AccountWindowType7d
+	}
+	if windowType != usagestats.AccountWindowType7d {
 		return nil, fmt.Errorf("invalid window_type")
 	}
 
