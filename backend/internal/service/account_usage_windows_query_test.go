@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -33,6 +34,35 @@ func TestAccountUsageService_GetUsageWindows_EnrichesOpenRow(t *testing.T) {
 	require.NotNil(t, resp.Windows[0].InferredLimitUSD)
 	require.InDelta(t, 16, *resp.Windows[0].InferredLimitUSD, 0.001)
 	require.Equal(t, usagestats.AccountWindowTrendInsufficient, resp.LimitTrend.Trend)
+}
+
+func TestDensifyWindowSamples_FillsHundredDollarAndOnePercentSteps(t *testing.T) {
+	start := time.Date(2026, 8, 13, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
+	row := usagestats.AccountUsageWindow{
+		WindowStart:     start,
+		WindowEnd:       end,
+		SampledAt:       end,
+		LastUsedPercent: 44,
+		StandardCost:    437.9,
+		LocalCost:       437.9,
+	}
+	samples := densifyWindowSamples(row, fallbackWindowSamples(row))
+	require.GreaterOrEqual(t, len(samples), 40)
+	require.InDelta(t, 0, samples[0].StandardCost, 0.001)
+	require.InDelta(t, 0, samples[0].UsedPercent, 0.001)
+	last := samples[len(samples)-1]
+	require.InDelta(t, 437.9, last.StandardCost, 0.05)
+	require.InDelta(t, 44, last.UsedPercent, 0.05)
+
+	var sawHundred bool
+	for _, sample := range samples {
+		if math.Abs(sample.StandardCost-100) < 5 {
+			sawHundred = true
+			require.InDelta(t, 44*100/437.9, sample.UsedPercent, 1)
+		}
+	}
+	require.True(t, sawHundred)
 }
 
 func TestAccountUsageService_GetUsageWindows_RejectsBadType(t *testing.T) {

@@ -1504,7 +1504,7 @@ export default {
         dailyByModel: '按日 × 模型花费',
         sevenDayLimitTrend: '7 天窗口用量与反推限额',
         costVsPercentTitle: '窗口金额 × 占比',
-        costVsPercentHint: '横轴是本窗本站花费，纵轴是官方占比。虚线是由最新点反推的额度（过原点）。提前重置按两次 reset 之间计窗。',
+        costVsPercentHint: '横轴是本窗本站花费，纵轴是官方占比。从窗口起点补到当前点（约每 $100 或每 1% 一个点）。虚线是反推额度。提前重置按两次 reset 之间计窗。',
         costAxis: '金额 (USD)',
         percentAxis: '占比 (%)',
         observedPoints: '观测点',

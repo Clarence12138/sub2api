@@ -3,9 +3,17 @@ package service
 import (
 	"context"
 	"fmt"
+	"math"
+	"sort"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
+)
+
+const (
+	windowSampleCostStep    = 100.0
+	windowSamplePercentStep = 1.0
+	windowSampleMaxPoints   = 200
 )
 
 // GetUsageWindows 返回账号官方窗口快照、按日模型曲线和 7d 限额斜率。
@@ -49,7 +57,7 @@ func (s *AccountUsageService) GetUsageWindows(ctx context.Context, accountID int
 		if len(samples) == 0 {
 			samples = fallbackWindowSamples(windows[i])
 		}
-		windows[i].Samples = samples
+		windows[i].Samples = densifyWindowSamples(windows[i], samples)
 	}
 
 	daily, err := s.windowRepo.DailyModelUsage(ctx, accountID, start, end)
@@ -91,7 +99,11 @@ func enrichOpenUsageWindow(ctx context.Context, repo AccountUsageWindowRepositor
 }
 
 func fallbackWindowSamples(row usagestats.AccountUsageWindow) []usagestats.AccountWindowSample {
-	if row.PeakUsedPercent <= 0 && row.StandardCost <= 0 {
+	percent := row.LastUsedPercent
+	if percent <= 0 {
+		percent = row.PeakUsedPercent
+	}
+	if percent <= 0 && row.StandardCost <= 0 {
 		return []usagestats.AccountWindowSample{}
 	}
 	sampledAt := row.SampledAt
@@ -100,10 +112,99 @@ func fallbackWindowSamples(row usagestats.AccountUsageWindow) []usagestats.Accou
 	}
 	return []usagestats.AccountWindowSample{{
 		SampledAt:    sampledAt,
-		UsedPercent:  row.PeakUsedPercent,
+		UsedPercent:  percent,
 		StandardCost: row.StandardCost,
 		LocalCost:    row.LocalCost,
 	}}
+}
+
+func densifyWindowSamples(row usagestats.AccountUsageWindow, samples []usagestats.AccountWindowSample) []usagestats.AccountWindowSample {
+	waypoints := make([]usagestats.AccountWindowSample, 0, len(samples)+2)
+	waypoints = append(waypoints, usagestats.AccountWindowSample{SampledAt: row.WindowStart})
+	sorted := append([]usagestats.AccountWindowSample(nil), samples...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].SampledAt.Equal(sorted[j].SampledAt) {
+			return sorted[i].StandardCost < sorted[j].StandardCost
+		}
+		return sorted[i].SampledAt.Before(sorted[j].SampledAt)
+	})
+	for _, sample := range sorted {
+		if sample.StandardCost < 0 {
+			sample.StandardCost = 0
+		}
+		if sample.UsedPercent < 0 {
+			sample.UsedPercent = 0
+		}
+		waypoints = append(waypoints, sample)
+	}
+	endPercent := row.LastUsedPercent
+	if endPercent <= 0 {
+		endPercent = row.PeakUsedPercent
+	}
+	if row.StandardCost > 0 || endPercent > 0 {
+		end := usagestats.AccountWindowSample{
+			SampledAt:    row.SampledAt,
+			UsedPercent:  endPercent,
+			StandardCost: row.StandardCost,
+			LocalCost:    row.LocalCost,
+		}
+		if end.SampledAt.IsZero() {
+			end.SampledAt = row.WindowEnd
+		}
+		last := waypoints[len(waypoints)-1]
+		if absFloat(end.StandardCost-last.StandardCost) > 0.01 || absFloat(end.UsedPercent-last.UsedPercent) > 0.05 {
+			waypoints = append(waypoints, end)
+		}
+	}
+
+	out := make([]usagestats.AccountWindowSample, 0, 32)
+	out = append(out, waypoints[0])
+	for i := 1; i < len(waypoints); i++ {
+		out = append(out, interpolateWindowSegment(waypoints[i-1], waypoints[i])...)
+		out = append(out, waypoints[i])
+	}
+	if len(out) > windowSampleMaxPoints {
+		out = downsampleWindowSamples(out, windowSampleMaxPoints)
+	}
+	return out
+}
+
+func interpolateWindowSegment(start, end usagestats.AccountWindowSample) []usagestats.AccountWindowSample {
+	dc := end.StandardCost - start.StandardCost
+	dp := end.UsedPercent - start.UsedPercent
+	if dc <= 0 && dp <= 0 {
+		return nil
+	}
+	steps := int(math.Max(math.Ceil(math.Abs(dc)/windowSampleCostStep), math.Ceil(math.Abs(dp)/windowSamplePercentStep)))
+	if steps < 2 {
+		return nil
+	}
+	out := make([]usagestats.AccountWindowSample, 0, steps-1)
+	span := end.SampledAt.Sub(start.SampledAt)
+	for i := 1; i < steps; i++ {
+		t := float64(i) / float64(steps)
+		out = append(out, usagestats.AccountWindowSample{
+			SampledAt:    start.SampledAt.Add(time.Duration(float64(span) * t)),
+			UsedPercent:  start.UsedPercent + dp*t,
+			StandardCost: start.StandardCost + dc*t,
+			LocalCost:    start.LocalCost + (end.LocalCost-start.LocalCost)*t,
+		})
+	}
+	return out
+}
+
+func downsampleWindowSamples(samples []usagestats.AccountWindowSample, limit int) []usagestats.AccountWindowSample {
+	if len(samples) <= limit || limit < 2 {
+		return samples
+	}
+	out := make([]usagestats.AccountWindowSample, 0, limit)
+	out = append(out, samples[0])
+	step := float64(len(samples)-1) / float64(limit-1)
+	for i := 1; i < limit-1; i++ {
+		out = append(out, samples[int(math.Round(float64(i)*step))])
+	}
+	out = append(out, samples[len(samples)-1])
+	return out
 }
 
 func sampleFromCodexExtra(updates map[string]any, now time.Time, reason string) CodexWindowSample {
