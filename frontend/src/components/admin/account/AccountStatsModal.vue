@@ -602,6 +602,7 @@ import {
   Filler,
   ScatterController
 } from 'chart.js'
+import type { ChartData, ChartOptions } from 'chart.js'
 import { Line, Scatter } from 'vue-chartjs'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
@@ -840,7 +841,7 @@ const selectedWindow = computed(() => {
   return rows.find((w) => windowKey(w) === selectedWindowKey.value) ?? rows[rows.length - 1]
 })
 
-const costPercentChartData = computed(() => {
+const costPercentChartData = computed<ChartData<'scatter'> | null>(() => {
   const row = selectedWindow.value
   const samples = row?.samples ?? []
   if (!samples.length) return null
@@ -849,7 +850,7 @@ const costPercentChartData = computed(() => {
   const inferred =
     row?.inferred_limit_usd && row.inferred_confidence !== 'low' ? row.inferred_limit_usd : null
   const limitX = inferred && inferred > 0 ? inferred : last.y > 0 ? last.x / (last.y / 100) : 0
-  const datasets: Array<Record<string, unknown>> = [
+  const datasets: ChartData<'scatter'>['datasets'] = [
     {
       label: t('admin.accounts.stats.observedPoints'),
       data: points,
@@ -878,13 +879,13 @@ const costPercentChartData = computed(() => {
   return { datasets }
 })
 
-const costPercentChartOptions = computed(() => ({
+const costPercentChartOptions = computed<ChartOptions<'scatter'>>(() => ({
   responsive: true,
   maintainAspectRatio: false,
   parsing: false,
   interaction: {
     intersect: false,
-    mode: 'nearest' as const
+    mode: 'nearest'
   },
   plugins: {
     legend: {
@@ -899,9 +900,11 @@ const costPercentChartOptions = computed(() => ({
     },
     tooltip: {
       callbacks: {
-        label: (context: { dataset?: { label?: string }; parsed: { x: number; y: number } }) => {
+        label: (context) => {
           const label = context.dataset?.label || ''
-          return `${label}: $${formatCost(context.parsed.x)} / ${context.parsed.y.toFixed(1)}%`
+          const x = context.parsed?.x ?? 0
+          const y = context.parsed?.y ?? 0
+          return `${label}: $${formatCost(x)} / ${y.toFixed(1)}%`
         }
       }
     }
