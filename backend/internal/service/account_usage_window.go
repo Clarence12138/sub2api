@@ -8,8 +8,14 @@ import (
 )
 
 const (
-	// accountWindowRollSkew 新旧 reset_at 相差不超过此时长视为同一窗（时钟/采样抖动）。
+	// accountWindowRollSkew 短窗（5h）新旧 reset_at 相差不超过此时长视为同一窗。
 	accountWindowRollSkew = 2 * time.Minute
+	// accountWindow7dRollSkew 7d 剩余秒数是 now+seconds 现算的，双源/取整常漂几分钟。
+	accountWindow7dRollSkew = 30 * time.Minute
+	// accountWindow7dRollMinJump 7d 占比几乎没掉时，reset_at 至少跳这么多才换窗。
+	accountWindow7dRollMinJump = 6 * time.Hour
+	// accountWindowResetPercentDrop 官方占比至少下降这么多，才认为窗口被重置。
+	accountWindowResetPercentDrop = 3.0
 	// accountWindowLowPercent 低于此峰值不反推额度。
 	accountWindowLowPercent = 8.0
 	// accountWindowMediumPercent 低于此峰值为中等置信。
@@ -91,14 +97,61 @@ func windowDuration(windowType string) time.Duration {
 }
 
 func sameAccountWindow(prevEnd, nextEnd time.Time) bool {
-	if prevEnd.IsZero() || nextEnd.IsZero() {
+	return sameAccountWindowWithin(prevEnd, nextEnd, accountWindowRollSkew)
+}
+
+func sameAccountWindowWithin(prevEnd, nextEnd time.Time, skew time.Duration) bool {
+	if prevEnd.IsZero() || nextEnd.IsZero() || skew < 0 {
 		return false
 	}
-	delta := nextEnd.Sub(prevEnd)
-	if delta < 0 {
-		delta = -delta
+	return absDuration(nextEnd.Sub(prevEnd)) <= skew
+}
+
+func shouldStayOnOpenWindow(open *usagestats.AccountUsageWindow, percent float64, resetAt *time.Time) bool {
+	if open == nil {
+		return false
 	}
-	return delta <= accountWindowRollSkew
+	if resetAt == nil {
+		return true
+	}
+	nextEnd := resetAt.UTC()
+	if open.WindowType != usagestats.AccountWindowType7d {
+		return sameAccountWindow(open.WindowEnd, nextEnd)
+	}
+	if sameAccountWindowWithin(open.WindowEnd, nextEnd, accountWindow7dRollSkew) {
+		return true
+	}
+	// 7d：占比没掉且 reset_at 没跳过数小时，当作剩余秒数抖动，挂在原窗。
+	return !usagePercentDropped(windowUsedPercent(open), percent) &&
+		!accountWindowResetJumped(open.WindowEnd, nextEnd, accountWindow7dRollMinJump)
+}
+
+func windowUsedPercent(open *usagestats.AccountUsageWindow) float64 {
+	if open == nil {
+		return 0
+	}
+	if open.PeakUsedPercent > open.LastUsedPercent {
+		return open.PeakUsedPercent
+	}
+	return open.LastUsedPercent
+}
+
+func usagePercentDropped(prev, next float64) bool {
+	return prev-next >= accountWindowResetPercentDrop
+}
+
+func accountWindowResetJumped(prev, next time.Time, minJump time.Duration) bool {
+	if prev.IsZero() || next.IsZero() || minJump <= 0 {
+		return false
+	}
+	return absDuration(next.Sub(prev)) >= minJump
+}
+
+func absDuration(d time.Duration) time.Duration {
+	if d < 0 {
+		return -d
+	}
+	return d
 }
 
 func shouldKeepTrajectorySample(prev *usagestats.AccountWindowSample, next usagestats.AccountWindowSample) bool {

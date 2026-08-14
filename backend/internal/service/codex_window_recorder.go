@@ -72,7 +72,7 @@ func (r *CodexWindowRecorder) observeOne(
 		slog.Warn("codex_window_get_open_failed", "account_id", accountID, "window_type", windowType, "error", err)
 		return
 	}
-	if open != nil && (resetAt == nil || sameAccountWindow(open.WindowEnd, resetAt.UTC())) {
+	if open != nil && shouldStayOnOpenWindow(open, percent, resetAt) {
 		if err := r.repo.UpdateSample(ctx, open.ID, percent, percent, now); err != nil {
 			slog.Warn("codex_window_sample_failed", "account_id", accountID, "window_type", windowType, "error", err)
 		}

@@ -190,6 +190,31 @@ func TestCodexWindowRecorder_ResetAtJumpClosesAndOpens(t *testing.T) {
 	require.NotEmpty(t, repo.trajectory[open.ID])
 }
 
+func TestCodexWindowRecorder_ResetAtJitterKeepsWindow(t *testing.T) {
+	repo := newWindowRepoStub()
+	rec := NewCodexWindowRecorder(repo)
+	now := time.Date(2026, 8, 14, 7, 23, 44, 0, time.UTC)
+	firstEnd := time.Date(2026, 8, 20, 3, 33, 43, 0, time.UTC)
+	used := 23.0
+	rec.Observe(context.Background(), 7, CodexWindowSample{
+		Used7dPercent: &used, Reset7dAt: &firstEnd, Now: now,
+	})
+	jitterEnd := firstEnd.Add(169 * time.Second)
+	rec.Observe(context.Background(), 7, CodexWindowSample{
+		Used7dPercent: &used, Reset7dAt: &jitterEnd, Now: now.Add(17 * time.Second),
+	})
+	backEnd := firstEnd.Add(9 * time.Second)
+	rec.Observe(context.Background(), 7, CodexWindowSample{
+		Used7dPercent: &used, Reset7dAt: &backEnd, Now: now.Add(34 * time.Second),
+	})
+	require.Equal(t, 1, repo.upserts)
+	require.Equal(t, 2, repo.samples)
+	require.Equal(t, 0, repo.rolls)
+	open := repo.open[usagestats.AccountWindowType7d]
+	require.Equal(t, firstEnd, open.WindowEnd)
+	require.InDelta(t, 23.0, open.LastUsedPercent, 0.001)
+}
+
 func TestInferAccountWindowLimit(t *testing.T) {
 	limit, conf := inferAccountWindowLimit(8, 4)
 	require.Nil(t, limit)
