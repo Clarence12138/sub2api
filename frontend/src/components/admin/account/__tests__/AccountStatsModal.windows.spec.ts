@@ -14,7 +14,11 @@ const i18n = createI18n({
       admin: {
         accounts: {
           stats: {
-            currentSlope: 'Current slope: ${slope} / 1%'
+            currentSlope: 'Current slope: ${slope} / 1%',
+            resetChartZoom: 'Reset zoom',
+            zoomIn: 'Zoom in',
+            zoomOut: 'Zoom out',
+            chartZoomHint: 'Scroll to zoom'
           }
         }
       }
@@ -144,6 +148,11 @@ describe('AccountStatsModal windows tab', () => {
     expect(wrapper.get('[data-test="window-selector"]').exists()).toBe(true)
     expect(wrapper.get('[data-test="cost-percent-chart"]').exists()).toBe(true)
     expect(wrapper.get('[data-test="current-slope"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="chart-zoom-in"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="chart-reset-zoom"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-test="chart-zoom-in"]').trigger('click')
+    expect(wrapper.get('[data-test="chart-reset-zoom"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('[data-test="chart-zoom-range"]').text()).toContain('$')
     expect(wrapper.text()).toContain('gpt-5.6-luna')
     expect(wrapper.text()).toContain('$30.00')
   })

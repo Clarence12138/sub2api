@@ -564,8 +564,64 @@
               {{ currentSlopeText }}
             </div>
           </div>
-          <div class="h-72">
-            <Scatter v-if="costPercentChartData" :data="costPercentChartData" :options="costPercentChartOptions" />
+          <div
+            v-if="costPercentChartData"
+            class="mb-2 flex flex-wrap items-center justify-between gap-2"
+          >
+            <p class="text-[11px] text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.stats.chartZoomHint') }}
+              <span
+                v-if="chartZoomRangeText"
+                class="ml-1 font-medium text-gray-600 dark:text-gray-300"
+                data-test="chart-zoom-range"
+              >{{ chartZoomRangeText }}</span>
+            </p>
+            <div class="flex items-center gap-1">
+              <button
+                type="button"
+                class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 dark:hover:bg-dark-800"
+                data-test="chart-zoom-out"
+                :title="t('admin.accounts.stats.zoomOut')"
+                @click="zoomScatter('out')"
+              >
+                −
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 dark:hover:bg-dark-800"
+                data-test="chart-zoom-in"
+                :title="t('admin.accounts.stats.zoomIn')"
+                @click="zoomScatter('in')"
+              >
+                +
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 dark:hover:bg-dark-800"
+                data-test="chart-reset-zoom"
+                :disabled="!chartZoomed"
+                @click="resetChartZoom"
+              >
+                {{ t('admin.accounts.stats.resetChartZoom') }}
+              </button>
+            </div>
+          </div>
+          <div
+            class="h-72 touch-none"
+            :class="scatterCursorClass"
+            @wheel.prevent="onScatterWheel"
+            @pointerdown="onScatterPointerDown"
+            @pointermove="onScatterPointerMove"
+            @pointerup="onScatterPointerUp"
+            @pointercancel="onScatterPointerUp"
+            @dblclick.prevent="resetChartZoom"
+          >
+            <Scatter
+              v-if="costPercentChartData"
+              ref="scatterRef"
+              :data="costPercentChartData"
+              :options="costPercentChartOptions"
+            />
             <div v-else class="flex h-full items-center justify-center text-sm text-gray-500">
               {{ t('admin.accounts.stats.noWindowSamples') }}
             </div>
@@ -613,6 +669,19 @@ import {
 } from 'chart.js'
 import type { ChartData, ChartOptions } from 'chart.js'
 import { Line, Scatter } from 'vue-chartjs'
+import type { ChartComponentRef } from 'vue-chartjs'
+import {
+  applyScatterButtonZoom,
+  applyScatterPan,
+  applyScatterWheelZoom,
+  eventToPlotRatios,
+  isInsidePlotArea,
+  isScatterZoomed,
+  resetScatterZoom,
+  visibleScatterDomain,
+  type PlotArea,
+  type ScatterZoom
+} from './scatterZoom'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
@@ -657,6 +726,15 @@ const windowStats = ref<AccountUsageWindowsResponse | null>(null)
 const activeTab = ref<'calendar' | 'windows'>('calendar')
 const windowDays = ref(30)
 const selectedWindowKey = ref('')
+const scatterRef = ref<ChartComponentRef | null>(null)
+const chartZoom = ref<ScatterZoom>(resetScatterZoom())
+const scatterPanning = ref(false)
+const scatterPanStart = ref<{
+  pointerId: number
+  x: number
+  y: number
+  zoom: ScatterZoom
+} | null>(null)
 
 const MODEL_COLORS = ['#3b82f6', '#10b981', '#f97316', '#8b5cf6', '#ef4444', '#14b8a6', '#eab308']
 
@@ -858,6 +936,115 @@ const currentSlopeText = computed(() => {
   return t('admin.accounts.stats.currentSlope', { slope: formatCost(slope) })
 })
 
+const costPercentDomain = computed(() => {
+  const row = selectedWindow.value
+  const samples = row?.samples ?? []
+  const xs = samples.map((s) => s.standard_cost)
+  const ys = samples.map((s) => s.used_percent)
+  const last = samples[samples.length - 1]
+  const inferred =
+    row?.inferred_limit_usd && row.inferred_confidence !== 'low' ? row.inferred_limit_usd : null
+  const limitX =
+    inferred && inferred > 0
+      ? inferred
+      : last && last.used_percent > 0
+        ? last.standard_cost / (last.used_percent / 100)
+        : 0
+  return {
+    xMin: 0,
+    xMax: Math.max(1, ...xs, limitX),
+    yMin: 0,
+    yMax: Math.max(100, ...ys)
+  }
+})
+
+const chartZoomed = computed(() => isScatterZoomed(chartZoom.value))
+
+const visibleCostPercentDomain = computed(() =>
+  visibleScatterDomain(costPercentDomain.value, chartZoom.value)
+)
+
+const chartZoomRangeText = computed(() => {
+  if (!chartZoomed.value) return ''
+  const view = visibleCostPercentDomain.value
+  return `$${formatCost(view.xMin)} – $${formatCost(view.xMax)} · ${view.yMin.toFixed(1)}% – ${view.yMax.toFixed(1)}%`
+})
+
+const scatterCursorClass = computed(() => {
+  if (!costPercentChartData.value) return ''
+  if (scatterPanning.value) return 'cursor-grabbing'
+  if (chartZoomed.value) return 'cursor-grab'
+  return 'cursor-crosshair'
+})
+
+function scatterPlotArea(): PlotArea | null {
+  const area = scatterRef.value?.chart?.chartArea
+  if (!area) return null
+  return {
+    left: area.left,
+    top: area.top,
+    width: area.right - area.left,
+    height: area.bottom - area.top
+  }
+}
+
+function eventCanvasOffsets(event: { clientX: number; clientY: number }): {
+  offsetX: number
+  offsetY: number
+} {
+  const canvas = scatterRef.value?.chart?.canvas
+  if (!canvas) return { offsetX: event.clientX, offsetY: event.clientY }
+  const rect = canvas.getBoundingClientRect()
+  return { offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top }
+}
+
+function onScatterWheel(event: WheelEvent) {
+  if (!costPercentChartData.value) return
+  event.preventDefault()
+  const { xRatio, yRatio } = eventToPlotRatios(eventCanvasOffsets(event), scatterPlotArea())
+  chartZoom.value = applyScatterWheelZoom(chartZoom.value, event, xRatio, yRatio)
+}
+
+function zoomScatter(direction: 'in' | 'out') {
+  chartZoom.value = applyScatterButtonZoom(chartZoom.value, direction)
+}
+
+function resetChartZoom() {
+  chartZoom.value = resetScatterZoom()
+  scatterPanning.value = false
+  scatterPanStart.value = null
+}
+
+function onScatterPointerDown(event: PointerEvent) {
+  if (!costPercentChartData.value || !chartZoomed.value || event.button !== 0) return
+  const area = scatterPlotArea()
+  if (!isInsidePlotArea(eventCanvasOffsets(event), area)) return
+  scatterPanStart.value = {
+    pointerId: event.pointerId,
+    x: event.clientX,
+    y: event.clientY,
+    zoom: { ...chartZoom.value }
+  }
+  ;(event.currentTarget as HTMLElement | null)?.setPointerCapture?.(event.pointerId)
+}
+
+function onScatterPointerMove(event: PointerEvent) {
+  const start = scatterPanStart.value
+  const area = scatterPlotArea()
+  if (!start || !area || area.width <= 0 || area.height <= 0) return
+  const dx = event.clientX - start.x
+  const dy = event.clientY - start.y
+  if (!scatterPanning.value && Math.hypot(dx, dy) < 3) return
+  scatterPanning.value = true
+  chartZoom.value = applyScatterPan(start.zoom, dx / area.width, dy / area.height)
+}
+
+function onScatterPointerUp(event: PointerEvent) {
+  if (scatterPanStart.value?.pointerId !== event.pointerId) return
+  scatterPanStart.value = null
+  scatterPanning.value = false
+}
+
 const costPercentChartData = computed<ChartData<'scatter'> | null>(() => {
   const row = selectedWindow.value
   const samples = row?.samples ?? []
@@ -875,7 +1062,8 @@ const costPercentChartData = computed<ChartData<'scatter'> | null>(() => {
       showLine: true,
       borderColor: '#60a5fa',
       backgroundColor: colors,
-      pointRadius: 4,
+      pointRadius: chartZoomed.value ? 5 : 4,
+      pointHoverRadius: 7,
       tension: 0
     }
   ]
@@ -897,83 +1085,89 @@ const costPercentChartData = computed<ChartData<'scatter'> | null>(() => {
   return { datasets }
 })
 
-const costPercentChartOptions = computed<ChartOptions<'scatter'>>(() => ({
-  responsive: true,
-  maintainAspectRatio: false,
-  parsing: false,
-  interaction: {
-    intersect: false,
-    mode: 'nearest'
-  },
-  plugins: {
-    legend: {
-      position: 'top' as const,
-      labels: {
-        color: chartColors.value.text,
-        usePointStyle: true,
-        pointStyle: 'circle',
-        padding: 15,
-        font: { size: 11 }
-      }
+const costPercentChartOptions = computed<ChartOptions<'scatter'>>(() => {
+  const view = visibleCostPercentDomain.value
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    parsing: false,
+    animation: false,
+    interaction: {
+      intersect: false,
+      mode: 'nearest'
     },
-    tooltip: {
-      callbacks: {
-        label: (context) => {
-          if (context.datasetIndex !== 0) {
+    plugins: {
+      legend: {
+        position: 'top' as const,
+        labels: {
+          color: chartColors.value.text,
+          usePointStyle: true,
+          pointStyle: 'circle',
+          padding: 15,
+          font: { size: 11 }
+        }
+      },
+      tooltip: {
+        callbacks: {
+          label: (context) => {
+            if (context.datasetIndex !== 0) {
+              const x = context.parsed?.x ?? 0
+              const y = context.parsed?.y ?? 0
+              return `${context.dataset?.label || ''}: $${formatCost(x)} / ${y.toFixed(1)}%`
+            }
+            const sample = selectedWindow.value?.samples?.[context.dataIndex]
             const x = context.parsed?.x ?? 0
             const y = context.parsed?.y ?? 0
-            return `${context.dataset?.label || ''}: $${formatCost(x)} / ${y.toFixed(1)}%`
+            const lines = [
+              `${t('admin.accounts.stats.costAxis')}: $${formatCost(x)}`,
+              `${t('admin.accounts.stats.percentAxis')}: ${y.toFixed(1)}%`
+            ]
+            if (sample?.slope_usd_per_percent != null) {
+              lines.push(
+                `${t('admin.accounts.stats.slopeLabel')}: $${formatCost(sample.slope_usd_per_percent)} / 1%`
+              )
+            }
+            return lines
           }
-          const sample = selectedWindow.value?.samples?.[context.dataIndex]
-          const x = context.parsed?.x ?? 0
-          const y = context.parsed?.y ?? 0
-          const lines = [
-            `${t('admin.accounts.stats.costAxis')}: $${formatCost(x)}`,
-            `${t('admin.accounts.stats.percentAxis')}: ${y.toFixed(1)}%`
-          ]
-          if (sample?.slope_usd_per_percent != null) {
-            lines.push(
-              `${t('admin.accounts.stats.slopeLabel')}: $${formatCost(sample.slope_usd_per_percent)} / 1%`
-            )
-          }
-          return lines
+        }
+      }
+    },
+    scales: {
+      x: {
+        type: 'linear' as const,
+        min: chartZoomed.value ? view.xMin : 0,
+        ...(chartZoomed.value ? { max: view.xMax } : {}),
+        title: {
+          display: true,
+          text: t('admin.accounts.stats.costAxis'),
+          color: chartColors.value.text,
+          font: { size: 11 }
+        },
+        grid: { color: chartColors.value.grid },
+        ticks: {
+          color: chartColors.value.text,
+          callback: (value: string | number) => '$' + formatCost(Number(value))
+        }
+      },
+      y: {
+        type: 'linear' as const,
+        min: chartZoomed.value ? view.yMin : 0,
+        ...(chartZoomed.value ? { max: view.yMax } : {}),
+        title: {
+          display: true,
+          text: t('admin.accounts.stats.percentAxis'),
+          color: chartColors.value.text,
+          font: { size: 11 }
+        },
+        grid: { color: chartColors.value.grid },
+        ticks: {
+          color: chartColors.value.text,
+          callback: (value: string | number) => `${Number(value).toFixed(0)}%`
         }
       }
     }
-  },
-  scales: {
-    x: {
-      type: 'linear' as const,
-      min: 0,
-      title: {
-        display: true,
-        text: t('admin.accounts.stats.costAxis'),
-        color: chartColors.value.text,
-        font: { size: 11 }
-      },
-      grid: { color: chartColors.value.grid },
-      ticks: {
-        color: chartColors.value.text,
-        callback: (value: string | number) => '$' + formatCost(Number(value))
-      }
-    },
-    y: {
-      type: 'linear' as const,
-      min: 0,
-      title: {
-        display: true,
-        text: t('admin.accounts.stats.percentAxis'),
-        color: chartColors.value.text,
-        font: { size: 11 }
-      },
-      grid: { color: chartColors.value.grid },
-      ticks: {
-        color: chartColors.value.text,
-        callback: (value: string | number) => `${Number(value).toFixed(0)}%`
-      }
-    }
   }
-}))
+})
 
 const trendBadgeClass = computed(() => {
   switch (windowStats.value?.limit_trend.trend) {
@@ -1020,6 +1214,10 @@ watch(
     }
   }
 )
+
+watch(selectedWindowKey, () => {
+  resetChartZoom()
+})
 
 const loadStats = async () => {
   if (!props.account) return
