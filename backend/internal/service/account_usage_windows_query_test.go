@@ -65,6 +65,18 @@ func TestDensifyWindowSamples_FillsHundredDollarAndOnePercentSteps(t *testing.T)
 	require.True(t, sawHundred)
 }
 
+func TestAnnotateWindowSampleSlopes_UsesLocalDelta(t *testing.T) {
+	samples := annotateWindowSampleSlopes([]usagestats.AccountWindowSample{
+		{StandardCost: 0, UsedPercent: 0},
+		{StandardCost: 157.8, UsedPercent: 10},
+		{StandardCost: 315.6, UsedPercent: 20},
+	})
+	require.NotNil(t, samples[1].SlopeUSDPerPercent)
+	require.InDelta(t, 15.78, *samples[1].SlopeUSDPerPercent, 0.05)
+	require.NotNil(t, lastWindowSampleSlope(samples))
+	require.InDelta(t, 15.78, *lastWindowSampleSlope(samples), 0.05)
+}
+
 func TestAccountUsageService_GetUsageWindows_RejectsBadType(t *testing.T) {
 	svc := &AccountUsageService{windowRepo: newWindowRepoStub()}
 	_, err := svc.GetUsageWindows(context.Background(), 1, time.Now().Add(-time.Hour), time.Now(), "monthly")

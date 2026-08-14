@@ -57,7 +57,8 @@ func (s *AccountUsageService) GetUsageWindows(ctx context.Context, accountID int
 		if len(samples) == 0 {
 			samples = fallbackWindowSamples(windows[i])
 		}
-		windows[i].Samples = densifyWindowSamples(windows[i], samples)
+		windows[i].Samples = annotateWindowSampleSlopes(densifyWindowSamples(windows[i], samples))
+		windows[i].CurrentSlopeUSDPerPercent = lastWindowSampleSlope(windows[i].Samples)
 	}
 
 	daily, err := s.windowRepo.DailyModelUsage(ctx, accountID, start, end)
@@ -191,6 +192,37 @@ func interpolateWindowSegment(start, end usagestats.AccountWindowSample) []usage
 		})
 	}
 	return out
+}
+
+func annotateWindowSampleSlopes(samples []usagestats.AccountWindowSample) []usagestats.AccountWindowSample {
+	var prev *usagestats.AccountWindowSample
+	for i := range samples {
+		sample := &samples[i]
+		if sample.UsedPercent > 0.05 && sample.StandardCost > 0 {
+			avg := sample.StandardCost / sample.UsedPercent
+			sample.SlopeUSDPerPercent = &avg
+		}
+		if prev != nil {
+			dp := sample.UsedPercent - prev.UsedPercent
+			dc := sample.StandardCost - prev.StandardCost
+			if dp > 0.05 && dc >= 0 {
+				local := dc / dp
+				sample.SlopeUSDPerPercent = &local
+			}
+		}
+		prev = sample
+	}
+	return samples
+}
+
+func lastWindowSampleSlope(samples []usagestats.AccountWindowSample) *float64 {
+	for i := len(samples) - 1; i >= 0; i-- {
+		if samples[i].SlopeUSDPerPercent != nil {
+			value := *samples[i].SlopeUSDPerPercent
+			return &value
+		}
+	}
+	return nil
 }
 
 func downsampleWindowSamples(samples []usagestats.AccountWindowSample, limit int) []usagestats.AccountWindowSample {

@@ -552,9 +552,18 @@
               </option>
             </select>
           </div>
-          <p class="mb-3 text-[11px] text-gray-500 dark:text-gray-400">
-            {{ t('admin.accounts.stats.costVsPercentHint') }}
-          </p>
+          <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <p class="text-[11px] text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.stats.costVsPercentHint') }}
+            </p>
+            <div
+              v-if="currentSlopeText"
+              class="rounded-full bg-violet-100 px-2.5 py-1 text-xs font-semibold text-violet-700 dark:bg-violet-900/30 dark:text-violet-300"
+              data-test="current-slope"
+            >
+              {{ currentSlopeText }}
+            </div>
+          </div>
           <div class="h-72">
             <Scatter v-if="costPercentChartData" :data="costPercentChartData" :options="costPercentChartOptions" />
             <div v-else class="flex h-full items-center justify-center text-sm text-gray-500">
@@ -841,6 +850,12 @@ const selectedWindow = computed(() => {
   return rows.find((w) => windowKey(w) === selectedWindowKey.value) ?? rows[rows.length - 1]
 })
 
+const currentSlopeText = computed(() => {
+  const slope = selectedWindow.value?.current_slope_usd_per_percent
+  if (slope == null || !Number.isFinite(slope) || slope <= 0) return ''
+  return t('admin.accounts.stats.currentSlope', { slope: formatCost(slope) })
+})
+
 const costPercentChartData = computed<ChartData<'scatter'> | null>(() => {
   const row = selectedWindow.value
   const samples = row?.samples ?? []
@@ -850,14 +865,15 @@ const costPercentChartData = computed<ChartData<'scatter'> | null>(() => {
   const inferred =
     row?.inferred_limit_usd && row.inferred_confidence !== 'low' ? row.inferred_limit_usd : null
   const limitX = inferred && inferred > 0 ? inferred : last.y > 0 ? last.x / (last.y / 100) : 0
+  const colors = samples.map((s) => slopePointColor(s.slope_usd_per_percent))
   const datasets: ChartData<'scatter'>['datasets'] = [
     {
       label: t('admin.accounts.stats.observedPoints'),
       data: points,
       showLine: true,
-      borderColor: '#3b82f6',
-      backgroundColor: '#3b82f6',
-      pointRadius: 3,
+      borderColor: '#60a5fa',
+      backgroundColor: colors,
+      pointRadius: 4,
       tension: 0
     }
   ]
@@ -901,10 +917,24 @@ const costPercentChartOptions = computed<ChartOptions<'scatter'>>(() => ({
     tooltip: {
       callbacks: {
         label: (context) => {
-          const label = context.dataset?.label || ''
+          if (context.datasetIndex !== 0) {
+            const x = context.parsed?.x ?? 0
+            const y = context.parsed?.y ?? 0
+            return `${context.dataset?.label || ''}: $${formatCost(x)} / ${y.toFixed(1)}%`
+          }
+          const sample = selectedWindow.value?.samples?.[context.dataIndex]
           const x = context.parsed?.x ?? 0
           const y = context.parsed?.y ?? 0
-          return `${label}: $${formatCost(x)} / ${y.toFixed(1)}%`
+          const lines = [
+            `${t('admin.accounts.stats.costAxis')}: $${formatCost(x)}`,
+            `${t('admin.accounts.stats.percentAxis')}: ${y.toFixed(1)}%`
+          ]
+          if (sample?.slope_usd_per_percent != null) {
+            lines.push(
+              `${t('admin.accounts.stats.slopeLabel')}: $${formatCost(sample.slope_usd_per_percent)} / 1%`
+            )
+          }
+          return lines
         }
       }
     }
@@ -1038,6 +1068,13 @@ function windowKey(row: AccountUsageWindow): string {
 function formatWindowOption(row: AccountUsageWindow): string {
   const status = row.status === 'open' ? t('admin.accounts.stats.windowOpen') : t('admin.accounts.stats.windowClosed')
   return `${formatWindowRange(row)} · ${status}`
+}
+
+function slopePointColor(slope?: number | null): string {
+  if (slope == null || !Number.isFinite(slope) || slope <= 0) return '#93c5fd'
+  if (slope >= 20) return '#f59e0b'
+  if (slope >= 10) return '#ef4444'
+  return '#8b5cf6'
 }
 
 function formatModelBreakdown(models: AccountWindowModelStat[]): string {

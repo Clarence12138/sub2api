@@ -2212,6 +2212,7 @@ export interface AccountUsageWindow {
   inferred_confidence: 'high' | 'medium' | 'low' | string
   model_breakdown: AccountWindowModelStat[]
   samples?: AccountWindowSample[]
+  current_slope_usd_per_percent?: number | null
   sampled_at: string
 }
 
@@ -2220,6 +2221,7 @@ export interface AccountWindowSample {
   used_percent: number
   standard_cost: number
   local_cost: number
+  slope_usd_per_percent?: number | null
 }
 
 export interface AccountDailyModelStat {

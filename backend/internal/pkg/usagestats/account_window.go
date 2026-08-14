@@ -34,33 +34,35 @@ type AccountWindowModelStat struct {
 
 // AccountUsageWindow 账号官方重置窗口快照。
 type AccountUsageWindow struct {
-	ID                 int64                    `json:"id"`
-	AccountID          int64                    `json:"account_id"`
-	WindowType         string                   `json:"window_type"`
-	WindowStart        time.Time                `json:"window_start"`
-	WindowEnd          time.Time                `json:"window_end"`
-	Status             string                   `json:"status"`
-	ClosedReason       string                   `json:"closed_reason,omitempty"`
-	PeakUsedPercent    float64                  `json:"peak_used_percent"`
-	LastUsedPercent    float64                  `json:"last_used_percent"`
-	LocalCost          float64                  `json:"local_cost"`
-	StandardCost       float64                  `json:"standard_cost"`
-	UserCost           float64                  `json:"user_cost"`
-	Requests           int64                    `json:"requests"`
-	Tokens             int64                    `json:"tokens"`
-	InferredLimitUSD   *float64                 `json:"inferred_limit_usd"`
-	InferredConfidence string                   `json:"inferred_confidence"`
-	ModelBreakdown     []AccountWindowModelStat `json:"model_breakdown"`
-	Samples            []AccountWindowSample    `json:"samples,omitempty"`
-	SampledAt          time.Time                `json:"sampled_at"`
+	ID                        int64                    `json:"id"`
+	AccountID                 int64                    `json:"account_id"`
+	WindowType                string                   `json:"window_type"`
+	WindowStart               time.Time                `json:"window_start"`
+	WindowEnd                 time.Time                `json:"window_end"`
+	Status                    string                   `json:"status"`
+	ClosedReason              string                   `json:"closed_reason,omitempty"`
+	PeakUsedPercent           float64                  `json:"peak_used_percent"`
+	LastUsedPercent           float64                  `json:"last_used_percent"`
+	LocalCost                 float64                  `json:"local_cost"`
+	StandardCost              float64                  `json:"standard_cost"`
+	UserCost                  float64                  `json:"user_cost"`
+	Requests                  int64                    `json:"requests"`
+	Tokens                    int64                    `json:"tokens"`
+	InferredLimitUSD          *float64                 `json:"inferred_limit_usd"`
+	InferredConfidence        string                   `json:"inferred_confidence"`
+	ModelBreakdown            []AccountWindowModelStat `json:"model_breakdown"`
+	Samples                   []AccountWindowSample    `json:"samples,omitempty"`
+	CurrentSlopeUSDPerPercent *float64                 `json:"current_slope_usd_per_percent,omitempty"`
+	SampledAt                 time.Time                `json:"sampled_at"`
 }
 
 // AccountWindowSample 窗内一次金额×占比观测。
 type AccountWindowSample struct {
-	SampledAt    time.Time `json:"sampled_at"`
-	UsedPercent  float64   `json:"used_percent"`
-	StandardCost float64   `json:"standard_cost"`
-	LocalCost    float64   `json:"local_cost"`
+	SampledAt          time.Time `json:"sampled_at"`
+	UsedPercent        float64   `json:"used_percent"`
+	StandardCost       float64   `json:"standard_cost"`
+	LocalCost          float64   `json:"local_cost"`
+	SlopeUSDPerPercent *float64  `json:"slope_usd_per_percent,omitempty"`
 }
 
 // AccountDailyModelStat 按自然日 × 模型原名聚合。

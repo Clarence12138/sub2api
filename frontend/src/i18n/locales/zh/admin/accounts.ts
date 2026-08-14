@@ -1511,6 +1511,8 @@ export default {
         inferredLimitLine: '反推额度',
         windowClosed: '已结束',
         noWindowSamples: '这个窗口还没有金额/占比采样。有请求或点一次查询后才会出现轨迹。',
+        currentSlope: '当前斜率：${slope} / 1%',
+        slopeLabel: '斜率',
         limitLoosening: '限额上升（好转）',
         limitTightening: '限额下降（收紧）',
         limitFlat: '限额持平',

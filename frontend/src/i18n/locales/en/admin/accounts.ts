@@ -1461,6 +1461,8 @@ export default {
         inferredLimitLine: 'Inferred limit',
         windowClosed: 'Closed',
         noWindowSamples: 'No cost/percent samples in this window yet. Traffic or an active query will start the trail.',
+        currentSlope: 'Current slope: ${slope} / 1%',
+        slopeLabel: 'Slope',
         limitLoosening: 'Limit rising',
         limitTightening: 'Limit tightening',
         limitFlat: 'Limit flat',

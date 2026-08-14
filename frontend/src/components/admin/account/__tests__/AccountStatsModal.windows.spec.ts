@@ -9,7 +9,17 @@ const i18n = createI18n({
   locale: 'en',
   fallbackWarn: false,
   missingWarn: false,
-  messages: { en: {} }
+  messages: {
+    en: {
+      admin: {
+        accounts: {
+          stats: {
+            currentSlope: 'Current slope: ${slope} / 1%'
+          }
+        }
+      }
+    }
+  }
 })
 
 const { getStats, getUsageWindows } = vi.hoisted(() => ({
@@ -70,9 +80,10 @@ function makeWindowResponse(): AccountUsageWindowsResponse {
         inferred_confidence: 'high',
         model_breakdown: [{ model: 'gpt-5.6-luna', requests: 2, tokens: 50, standard_cost: 7, account_cost: 6 }],
         samples: [
-          { sampled_at: '2026-08-02T00:00:00Z', used_percent: 10, standard_cost: 3, local_cost: 2 },
-          { sampled_at: '2026-08-08T00:00:00Z', used_percent: 40, standard_cost: 12, local_cost: 10 }
+          { sampled_at: '2026-08-02T00:00:00Z', used_percent: 10, standard_cost: 3, local_cost: 2, slope_usd_per_percent: 0.3 },
+          { sampled_at: '2026-08-08T00:00:00Z', used_percent: 40, standard_cost: 12, local_cost: 10, slope_usd_per_percent: 15.78 }
         ],
+        current_slope_usd_per_percent: 15.78,
         sampled_at: '2026-08-08T00:00:00Z'
       }
     ],
@@ -132,6 +143,7 @@ describe('AccountStatsModal windows tab', () => {
     expect(wrapper.get('[data-test="limit-trend-badge"]').text()).toContain('limitLoosening')
     expect(wrapper.get('[data-test="window-selector"]').exists()).toBe(true)
     expect(wrapper.get('[data-test="cost-percent-chart"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="current-slope"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('gpt-5.6-luna')
     expect(wrapper.text()).toContain('$30.00')
   })
