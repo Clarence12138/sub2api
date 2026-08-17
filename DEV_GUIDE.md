@@ -245,6 +245,14 @@ git add ent/       # 生成的文件也要提交
 - [ ] 所有 test stub 补全新接口方法（如果改了 interface）
 - [ ] Ent 生成的代码已提交（如果改了 schema）
 
+---
+
+### 坑 12：GitHub / CI 故障时不要在生产机构建
+
+**问题**：发版依赖 GitHub Actions 构建镜像并推 GHCR。上游或 GitHub 异常时，Agent 容易改去 SSH 进 `ccs` 本地 `go build` / `pnpm build` / `docker build`，把生产机 CPU 打满甚至死机。
+
+**解决**：`ccs` 只拉已有镜像并重启。CI/GHCR 不可用就停下来告诉人，等恢复或用独立构建机。完整约束见 `AGENTS.md`。
+
 ## 五、常用命令速查
 
 ### 数据库操作

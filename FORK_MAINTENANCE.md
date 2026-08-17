@@ -148,6 +148,8 @@ ghcr.io/clarence12138/sub2api:0.1.169-clarence.1
 ghcr.io/clarence12138/sub2api:latest
 ```
 
+生产机（`ccs`）只拉已发布镜像并重启，**禁止**在上面 `go build` / `pnpm build` / `docker build`。GitHub Actions 或 GHCR 不可用时停下来，不要把生产机当构建回退。详见 `AGENTS.md`。
+
 ## 当前定制（摘要）
 
 本 fork 在官方之上保留的产品向改动包括：
