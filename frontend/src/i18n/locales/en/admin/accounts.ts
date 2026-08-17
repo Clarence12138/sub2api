@@ -1454,7 +1454,7 @@ export default {
         dailyByModel: 'Daily usage by model',
         sevenDayLimitTrend: '7-day usage and inferred limit',
         costVsPercentTitle: 'Window cost vs percent',
-        costVsPercentHint: 'X is local spend, Y is official percent. Points are filled from window start to now, about every $100 or 1%. The dashed line is the inferred quota. Early resets use the interval between two reset times.',
+        costVsPercentHint: 'X is local spend, Y is official percent. Points are filled from window start to now, about every $100 or 1%. The dashed line is the inferred quota. Current slope is dollars for the latest official 1%, not total cost ÷ total percent. Early resets use the interval between two reset times.',
         chartZoomHint: 'Scroll to zoom, drag to pan, double-click to reset.',
         zoomIn: 'Zoom in',
         zoomOut: 'Zoom out',

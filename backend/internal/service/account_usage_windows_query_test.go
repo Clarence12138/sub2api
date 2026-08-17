@@ -77,6 +77,70 @@ func TestAnnotateWindowSampleSlopes_UsesLocalDelta(t *testing.T) {
 	require.InDelta(t, 15.78, *lastWindowSampleSlope(samples), 0.05)
 }
 
+func TestAnnotateWindowSampleSlopes_IntegerPercentUsesTickNotAverage(t *testing.T) {
+	samples := annotateWindowSampleSlopes([]usagestats.AccountWindowSample{
+		{StandardCost: 0, UsedPercent: 0},
+		{StandardCost: 437.90, UsedPercent: 44},
+		{StandardCost: 671.10, UsedPercent: 66},
+		{StandardCost: 699.57, UsedPercent: 67},
+		{StandardCost: 705.98, UsedPercent: 67},
+		{StandardCost: 705.98, UsedPercent: 67},
+	})
+	slope := lastWindowSampleSlope(samples)
+	require.NotNil(t, slope)
+	require.InDelta(t, 28.47, *slope, 0.1)
+	require.Greater(t, math.Abs(*slope-705.98/67), 0.5)
+}
+
+func TestAnnotateWindowSampleSlopes_StuckAtSamePercentUsesBurn(t *testing.T) {
+	samples := annotateWindowSampleSlopes([]usagestats.AccountWindowSample{
+		{StandardCost: 100, UsedPercent: 50},
+		{StandardCost: 130, UsedPercent: 50},
+	})
+	slope := lastWindowSampleSlope(samples)
+	require.NotNil(t, slope)
+	require.InDelta(t, 30, *slope, 0.01)
+}
+
+func TestFinalizeWindowSamples_KeepsTickSlopeAfterDownsample(t *testing.T) {
+	start := time.Date(2026, 8, 13, 0, 0, 0, 0, time.UTC)
+	now := start.Add(time.Hour)
+	raw := make([]usagestats.AccountWindowSample, 0, 400)
+	for i := 0; i < 300; i++ {
+		raw = append(raw, usagestats.AccountWindowSample{
+			SampledAt:    now.Add(time.Duration(i) * time.Minute),
+			UsedPercent:  66,
+			StandardCost: 671 + float64(i)*0.1,
+		})
+	}
+	raw = append(raw, usagestats.AccountWindowSample{
+		SampledAt:    now.Add(300 * time.Minute),
+		UsedPercent:  67,
+		StandardCost: 701,
+	})
+	for i := 0; i < 80; i++ {
+		raw = append(raw, usagestats.AccountWindowSample{
+			SampledAt:    now.Add(time.Duration(301+i) * time.Minute),
+			UsedPercent:  67,
+			StandardCost: 701 + float64(i)*0.1,
+		})
+	}
+	last := raw[len(raw)-1]
+	row := usagestats.AccountUsageWindow{
+		WindowStart:     start,
+		WindowEnd:       start.Add(7 * 24 * time.Hour),
+		SampledAt:       last.SampledAt,
+		LastUsedPercent: last.UsedPercent,
+		StandardCost:    last.StandardCost,
+	}
+	out := finalizeWindowSamples(row, raw)
+	require.LessOrEqual(t, len(out), windowSampleMaxPoints)
+	slope := lastWindowSampleSlope(out)
+	require.NotNil(t, slope)
+	require.InDelta(t, 30, *slope, 2)
+	require.Greater(t, *slope, 20.0)
+}
+
 func TestAccountUsageService_GetUsageWindows_RejectsBadType(t *testing.T) {
 	svc := &AccountUsageService{windowRepo: newWindowRepoStub()}
 	_, err := svc.GetUsageWindows(context.Background(), 1, time.Now().Add(-time.Hour), time.Now(), "monthly")

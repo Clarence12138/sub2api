@@ -14,6 +14,9 @@ const (
 	windowSampleCostStep    = 100.0
 	windowSamplePercentStep = 1.0
 	windowSampleMaxPoints   = 200
+	// 官方占比多为整数。相邻采样经常停在同一个百分点上，
+	// 斜率必须跨过至少半个百分点，不能用「总金额 / 总占比」。
+	windowSlopeMinPercentDelta = 0.5
 )
 
 // GetUsageWindows 返回账号官方窗口快照、按日模型曲线和 7d 限额斜率。
@@ -54,12 +57,9 @@ func (s *AccountUsageService) GetUsageWindows(ctx context.Context, accountID int
 		return nil, fmt.Errorf("list window samples: %w", err)
 	}
 	for i := range windows {
-		samples := samplesByWindow[windows[i].ID]
-		if len(samples) == 0 {
-			samples = fallbackWindowSamples(windows[i])
-		}
-		windows[i].Samples = annotateWindowSampleSlopes(densifyWindowSamples(windows[i], samples))
-		windows[i].CurrentSlopeUSDPerPercent = lastWindowSampleSlope(windows[i].Samples)
+		samples := finalizeWindowSamples(windows[i], samplesByWindow[windows[i].ID])
+		windows[i].Samples = samples
+		windows[i].CurrentSlopeUSDPerPercent = lastWindowSampleSlope(samples)
 	}
 
 	daily, err := s.windowRepo.DailyModelUsage(ctx, accountID, start, end)
@@ -165,6 +165,14 @@ func densifyWindowSamples(row usagestats.AccountUsageWindow, samples []usagestat
 		out = append(out, interpolateWindowSegment(waypoints[i-1], waypoints[i])...)
 		out = append(out, waypoints[i])
 	}
+	return out
+}
+
+func finalizeWindowSamples(row usagestats.AccountUsageWindow, samples []usagestats.AccountWindowSample) []usagestats.AccountWindowSample {
+	if len(samples) == 0 {
+		samples = fallbackWindowSamples(row)
+	}
+	out := annotateWindowSampleSlopes(densifyWindowSamples(row, samples))
 	if len(out) > windowSampleMaxPoints {
 		out = downsampleWindowSamples(out, windowSampleMaxPoints)
 	}
@@ -196,24 +204,75 @@ func interpolateWindowSegment(start, end usagestats.AccountWindowSample) []usage
 }
 
 func annotateWindowSampleSlopes(samples []usagestats.AccountWindowSample) []usagestats.AccountWindowSample {
-	var prev *usagestats.AccountWindowSample
+	firstIdx := make(map[int]int, len(samples))
 	for i := range samples {
-		sample := &samples[i]
-		if sample.UsedPercent > 0.05 && sample.StandardCost > 0 {
-			avg := sample.StandardCost / sample.UsedPercent
-			sample.SlopeUSDPerPercent = &avg
+		level := windowPercentLevel(samples[i].UsedPercent)
+		if _, exists := firstIdx[level]; !exists {
+			firstIdx[level] = i
 		}
-		if prev != nil {
-			dp := sample.UsedPercent - prev.UsedPercent
-			dc := sample.StandardCost - prev.StandardCost
-			if dp > 0.05 && dc >= 0 {
-				local := dc / dp
-				sample.SlopeUSDPerPercent = &local
-			}
+		if slope, ok := incrementalSlopeAtLevel(samples, firstIdx, i, level); ok {
+			value := slope
+			samples[i].SlopeUSDPerPercent = &value
 		}
-		prev = sample
 	}
 	return samples
+}
+
+func windowPercentLevel(percent float64) int {
+	if percent < 0 {
+		return 0
+	}
+	return int(math.Floor(percent + 1e-9))
+}
+
+// incrementalSlopeAtLevel 用「上一个百分点首次出现 → 当前百分点首次出现」的增量。
+// 同一整数占比上继续烧钱时，已花费可作为下一百分点的下限。
+func incrementalSlopeAtLevel(
+	samples []usagestats.AccountWindowSample,
+	firstIdx map[int]int,
+	index int,
+	level int,
+) (float64, bool) {
+	currFirst, ok := firstIdx[level]
+	if !ok {
+		return 0, false
+	}
+	completed, hasCompleted := completedLevelSlope(samples, firstIdx, currFirst, level)
+	burned := samples[index].StandardCost - samples[currFirst].StandardCost
+	if burned < 0 {
+		burned = 0
+	}
+	switch {
+	case hasCompleted && burned > completed:
+		return burned, true
+	case hasCompleted:
+		return completed, true
+	case burned > 0:
+		return burned, true
+	default:
+		return 0, false
+	}
+}
+
+func completedLevelSlope(
+	samples []usagestats.AccountWindowSample,
+	firstIdx map[int]int,
+	currFirst int,
+	level int,
+) (float64, bool) {
+	for prev := level - 1; prev >= 0; prev-- {
+		prevFirst, ok := firstIdx[prev]
+		if !ok {
+			continue
+		}
+		dp := samples[currFirst].UsedPercent - samples[prevFirst].UsedPercent
+		dc := samples[currFirst].StandardCost - samples[prevFirst].StandardCost
+		if dp >= windowSlopeMinPercentDelta && dc >= 0 {
+			return dc / dp, true
+		}
+		return 0, false
+	}
+	return 0, false
 }
 
 func lastWindowSampleSlope(samples []usagestats.AccountWindowSample) *float64 {

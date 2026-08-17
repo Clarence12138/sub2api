@@ -52,7 +52,7 @@ type AccountUsageWindow struct {
 	InferredConfidence        string                   `json:"inferred_confidence"`
 	ModelBreakdown            []AccountWindowModelStat `json:"model_breakdown"`
 	Samples                   []AccountWindowSample    `json:"samples,omitempty"`
-	CurrentSlopeUSDPerPercent *float64                 `json:"current_slope_usd_per_percent,omitempty"`
+	CurrentSlopeUSDPerPercent *float64                 `json:"current_slope_usd_per_percent,omitempty"` // 最近 1 个官方百分点的增量 $/1%，不是总金额/总占比
 	SampledAt                 time.Time                `json:"sampled_at"`
 }
 
@@ -62,7 +62,7 @@ type AccountWindowSample struct {
 	UsedPercent        float64   `json:"used_percent"`
 	StandardCost       float64   `json:"standard_cost"`
 	LocalCost          float64   `json:"local_cost"`
-	SlopeUSDPerPercent *float64  `json:"slope_usd_per_percent,omitempty"`
+	SlopeUSDPerPercent *float64  `json:"slope_usd_per_percent,omitempty"` // 到达该点时最近 1 个官方百分点的增量 $/1%
 }
 
 // AccountDailyModelStat 按自然日 × 模型原名聚合。
