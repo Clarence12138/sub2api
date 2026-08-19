@@ -50,5 +50,9 @@ type UserSubscriptionRepository interface {
 // not need to implement bulk-only operations.
 type UserSubscriptionBulkResetRepository interface {
 	ListActiveForBulkReset(ctx context.Context, groupIDs, subscriptionIDs []int64, now time.Time) ([]UserSubscription, error)
-	ResetUsageWindowsBulk(ctx context.Context, ids []int64, resetDaily, resetWeekly, resetMonthly bool, activeAt, newWindowStart time.Time) (int, error)
+	// ResetUsageWindowsBulk 批量重置所选窗口的用量。
+	// dailyStart 写入日窗口（当天 0 点，保持日历日节奏）；
+	// periodicStart 写入周/月窗口（重置时刻，期限对齐滚动窗口）。
+	// activeAt 仅用于过滤未过期订阅。
+	ResetUsageWindowsBulk(ctx context.Context, ids []int64, resetDaily, resetWeekly, resetMonthly bool, activeAt, dailyStart, periodicStart time.Time) (int, error)
 }

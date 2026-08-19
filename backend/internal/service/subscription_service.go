@@ -969,7 +969,7 @@ func (s *SubscriptionService) BulkResetQuota(ctx context.Context, input *BulkRes
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now()
+	now := s.now()
 	var resolution *bulkResetQuotaResolution
 	err = s.withSubscriptionUpdateTx(ctx, func(txCtx context.Context) error {
 		var resolveErr error
@@ -978,7 +978,8 @@ func (s *SubscriptionService) BulkResetQuota(ctx context.Context, input *BulkRes
 			return resolveErr
 		}
 		ids := subscriptionIDs(resolution.Targets)
-		affected, resetErr := repo.ResetUsageWindowsBulk(txCtx, ids, normalized.Windows.Daily, normalized.Windows.Weekly, normalized.Windows.Monthly, now, startOfDay(now))
+		// 与单个重置一致：日窗口锚当天 0 点，周/月窗口锚重置时刻。
+		affected, resetErr := repo.ResetUsageWindowsBulk(txCtx, ids, normalized.Windows.Daily, normalized.Windows.Weekly, normalized.Windows.Monthly, now, timezone.StartOfDay(now), now)
 		if resetErr != nil {
 			return resetErr
 		}
