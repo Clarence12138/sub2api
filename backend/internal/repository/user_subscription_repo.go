@@ -439,7 +439,7 @@ func (r *userSubscriptionRepository) ResetUsageWindowsBulk(
 	ctx context.Context,
 	ids []int64,
 	resetDaily, resetWeekly, resetMonthly bool,
-	activeAt, newWindowStart time.Time,
+	activeAt, dailyStart, periodicStart time.Time,
 ) (int, error) {
 	if len(ids) == 0 {
 		return 0, nil
@@ -454,13 +454,13 @@ func (r *userSubscriptionRepository) ResetUsageWindowsBulk(
 			usersubscription.ExpiresAtGT(activeAt),
 		)
 		if resetDaily {
-			update.SetDailyUsageUsd(0).SetDailyWindowStart(newWindowStart)
+			update.SetDailyUsageUsd(0).SetDailyWindowStart(dailyStart)
 		}
 		if resetWeekly {
-			update.SetWeeklyUsageUsd(0).SetWeeklyWindowStart(newWindowStart)
+			update.SetWeeklyUsageUsd(0).SetWeeklyWindowStart(periodicStart)
 		}
 		if resetMonthly {
-			update.SetMonthlyUsageUsd(0).SetMonthlyWindowStart(newWindowStart)
+			update.SetMonthlyUsageUsd(0).SetMonthlyWindowStart(periodicStart)
 		}
 		affected, saveErr := update.Save(ctx)
 		total += affected

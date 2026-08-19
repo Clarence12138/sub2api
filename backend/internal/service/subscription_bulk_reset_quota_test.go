@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,10 +27,13 @@ func (r bulkResetGroupRepoStub) GetByID(_ context.Context, id int64) (*Group, er
 
 type bulkResetUserSubRepoStub struct {
 	userSubRepoNoop
-	active       []UserSubscription
-	resetIDs     []int64
-	resetWindows QuotaResetWindows
-	resetErr     error
+	active          []UserSubscription
+	resetIDs        []int64
+	resetWindows    QuotaResetWindows
+	resetActiveAt   time.Time
+	resetDailyAt    time.Time
+	resetPeriodicAt time.Time
+	resetErr        error
 }
 
 type failingSubscriptionInvalidationCache struct {
@@ -45,9 +49,12 @@ func (r *bulkResetUserSubRepoStub) ListActiveForBulkReset(context.Context, []int
 	return append([]UserSubscription(nil), r.active...), nil
 }
 
-func (r *bulkResetUserSubRepoStub) ResetUsageWindowsBulk(_ context.Context, ids []int64, daily, weekly, monthly bool, _, _ time.Time) (int, error) {
+func (r *bulkResetUserSubRepoStub) ResetUsageWindowsBulk(_ context.Context, ids []int64, daily, weekly, monthly bool, activeAt, dailyStart, periodicStart time.Time) (int, error) {
 	r.resetIDs = append([]int64(nil), ids...)
 	r.resetWindows = QuotaResetWindows{Daily: daily, Weekly: weekly, Monthly: monthly}
+	r.resetActiveAt = activeAt
+	r.resetDailyAt = dailyStart
+	r.resetPeriodicAt = periodicStart
 	if r.resetErr != nil {
 		return 0, r.resetErr
 	}
@@ -101,6 +108,25 @@ func TestBulkResetQuotaResetsValidTargetsAndKeepsManualFailures(t *testing.T) {
 	require.Equal(t, 1, result.Failed)
 	require.Equal(t, []int64{1}, result.SuccessIDs)
 	require.Equal(t, int64(3), result.Failures[0].SubscriptionID)
+}
+
+func TestBulkResetQuotaAnchorsDailyAtMidnightAndPeriodicAtResetMoment(t *testing.T) {
+	repo := &bulkResetUserSubRepoStub{active: []UserSubscription{{ID: 1, UserID: 11, GroupID: 10}}}
+	svc := newBulkResetService(repo)
+	resetAt := time.Date(2026, 8, 13, 11, 33, 53, 0, time.UTC)
+	svc.now = func() time.Time { return resetAt }
+
+	_, err := svc.BulkResetQuota(context.Background(), &BulkResetQuotaInput{
+		Target:  BulkResetQuotaTarget{GroupIDs: []int64{10}},
+		Windows: QuotaResetWindows{Daily: true, Weekly: true, Monthly: true},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []int64{1}, repo.resetIDs)
+	require.Equal(t, QuotaResetWindows{Daily: true, Weekly: true, Monthly: true}, repo.resetWindows)
+	require.Equal(t, resetAt, repo.resetActiveAt)
+	require.Equal(t, timezone.StartOfDay(resetAt), repo.resetDailyAt)
+	require.Equal(t, resetAt, repo.resetPeriodicAt)
 }
 
 func TestBulkResetQuotaReturnsDatabaseErrorForWholeBatch(t *testing.T) {
