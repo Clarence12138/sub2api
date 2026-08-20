@@ -84,6 +84,8 @@ type APIKeyAuthGroupSnapshot struct {
 	AudioRealtimePricePerMin        *float64                      `json:"audio_realtime_price_per_min,omitempty"`
 	AudioTTSPricePerMillionChars    *float64                      `json:"audio_tts_price_per_million_chars,omitempty"`
 	AudioSTTPricePerHour            *float64                      `json:"audio_stt_price_per_hour,omitempty"`
+	LongContextPricingEnabled       bool                          `json:"long_context_pricing_enabled"`
+	ModelPricing                    []ChannelModelPricing         `json:"model_pricing,omitempty"`
 	ClaudeCodeOnly                  bool                          `json:"claude_code_only"`
 	FallbackGroupID                 *int64                        `json:"fallback_group_id,omitempty"`
 	FallbackGroupIDOnInvalidRequest *int64                        `json:"fallback_group_id_on_invalid_request,omitempty"`
@@ -130,11 +132,6 @@ type APIKeyAuthGroupSnapshot struct {
 	ProfitControlEnabled bool    `json:"profit_control_enabled"`
 	ProfitMinMargin      float64 `json:"profit_min_margin"`
 	ProfitSafetyBuffer   float64 `json:"profit_safety_buffer"`
-
-	// 长上下文阶梯：CalculateCostUnified / 定价解析器读的就是这份快照物化出的
-	// Group。漏掉该字段时热路径零值为 false，官方 272k/200k 阶梯会被静默关掉，
-	// 后台分组开关开着也不生效。必须与 GetByKeyForAuth 投影同步。
-	LongContextPricingEnabled bool `json:"long_context_pricing_enabled"`
 }
 
 // APIKeyAuthCacheEntry 缓存条目，支持负缓存
