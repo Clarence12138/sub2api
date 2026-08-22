@@ -313,6 +313,9 @@ func sampleFromCodexExtra(updates map[string]any, now time.Time, reason string) 
 	if resetAt, ok := extraTimePtr(updates["codex_7d_reset_at"]); ok {
 		sample.Reset7dAt = resetAt
 	}
+	if minutes, ok := extraIntPtr(updates["codex_7d_window_minutes"]); ok {
+		sample.Window7dMinutes = minutes
+	}
 	return sample
 }
 
@@ -333,6 +336,14 @@ func extraTimePtr(raw any) (*time.Time, bool) {
 		return nil, false
 	}
 	return &parsed, true
+}
+
+func extraIntPtr(raw any) (*int, bool) {
+	if raw == nil {
+		return nil, false
+	}
+	value := parseExtraInt(raw)
+	return &value, true
 }
 
 func observeCodexWindow(observer CodexWindowObserver, accountID int64, sample CodexWindowSample) {

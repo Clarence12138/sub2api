@@ -13,6 +13,8 @@ import (
 	"github.com/lib/pq"
 )
 
+var errAccountUsageWindowConflict = errors.New("account usage window state conflict")
+
 type accountUsageWindowRepository struct {
 	sql sqlExecutor
 	db  *sql.DB
@@ -42,7 +44,7 @@ func (r *accountUsageWindowRepository) UpsertOpen(ctx context.Context, row *usag
 }
 
 func (r *accountUsageWindowRepository) UpdateSample(ctx context.Context, id int64, peakPercent, lastPercent float64, sampledAt time.Time) error {
-	_, err := r.sql.ExecContext(ctx, `
+	result, err := r.sql.ExecContext(ctx, `
 		UPDATE account_usage_windows
 		SET peak_used_percent = GREATEST(peak_used_percent, $2),
 			last_used_percent = $3,
@@ -50,7 +52,17 @@ func (r *accountUsageWindowRepository) UpdateSample(ctx context.Context, id int6
 			updated_at = NOW()
 		WHERE id = $1 AND status = 'open'
 	`, id, peakPercent, lastPercent, sampledAt)
-	return err
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return fmt.Errorf("%w: update window %d affected %d rows", errAccountUsageWindowConflict, id, affected)
+	}
+	return nil
 }
 
 func (r *accountUsageWindowRepository) CloseAndOpen(ctx context.Context, closed *usagestats.AccountUsageWindow, next *usagestats.AccountUsageWindow) error {
@@ -115,7 +127,7 @@ func (r *accountUsageWindowRepository) closeOne(ctx context.Context, exec sqlExe
 	if row.ClosedReason != "" {
 		reason = row.ClosedReason
 	}
-	_, err = exec.ExecContext(ctx, `
+	result, err := exec.ExecContext(ctx, `
 		UPDATE account_usage_windows
 		SET status = 'closed',
 			closed_reason = $2,
@@ -135,7 +147,17 @@ func (r *accountUsageWindowRepository) closeOne(ctx context.Context, exec sqlExe
 	`, row.ID, reason, row.PeakUsedPercent, row.LastUsedPercent,
 		row.LocalCost, row.StandardCost, row.UserCost, row.Requests, row.Tokens,
 		row.InferredLimitUSD, row.InferredConfidence, breakdown, row.SampledAt)
-	return err
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return fmt.Errorf("%w: close window %d affected %d rows", errAccountUsageWindowConflict, row.ID, affected)
+	}
+	return nil
 }
 
 func upsertOpenWith(ctx context.Context, exec sqlExecutor, row *usagestats.AccountUsageWindow) error {
@@ -166,7 +188,7 @@ func upsertOpenWith(ctx context.Context, exec sqlExecutor, row *usagestats.Accou
 	`, []any{row.AccountID, row.WindowType, row.WindowStart, row.WindowEnd,
 		row.PeakUsedPercent, row.LastUsedPercent, breakdown, row.SampledAt}, &id)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil
+		return fmt.Errorf("%w: open window already exists as a closed row", errAccountUsageWindowConflict)
 	}
 	if err != nil {
 		return err

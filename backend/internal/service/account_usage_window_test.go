@@ -14,8 +14,8 @@ func TestSameAccountWindowSkew(t *testing.T) {
 	require.False(t, sameAccountWindow(base, base.Add(accountWindowRollSkew+time.Minute)))
 }
 
-func TestShouldStayOnOpenWindow7dIgnoresResetJitter(t *testing.T) {
-	end := time.Date(2026, 8, 20, 3, 33, 43, 0, time.UTC)
+func TestClassifyAccountWindowSample7d(t *testing.T) {
+	end := time.Date(2026, 8, 27, 3, 33, 43, 0, time.UTC)
 	open := &usagestats.AccountUsageWindow{
 		WindowType:      usagestats.AccountWindowType7d,
 		WindowEnd:       end,
@@ -24,26 +24,26 @@ func TestShouldStayOnOpenWindow7dIgnoresResetJitter(t *testing.T) {
 	}
 
 	jitter := end.Add(3 * time.Minute)
-	require.True(t, shouldStayOnOpenWindow(open, 23, &jitter))
+	require.Equal(t, accountWindowSampleUpdate, classifyAccountWindowSample(open, &jitter, end.Add(-24*time.Hour)))
 	back := end.Add(-3 * time.Minute)
-	require.True(t, shouldStayOnOpenWindow(open, 23, &back))
-	require.True(t, shouldStayOnOpenWindow(open, 23, nil))
+	require.Equal(t, accountWindowSampleUpdate, classifyAccountWindowSample(open, &back, end.Add(-24*time.Hour)))
+	require.Equal(t, accountWindowSampleUpdate, classifyAccountWindowSample(open, nil, end.Add(-24*time.Hour)))
 
-	// 超过 30 分钟但仍不到数小时，占比没掉：继续挂原窗。
-	drift := end.Add(2 * time.Hour)
-	require.True(t, shouldStayOnOpenWindow(open, 23, &drift))
-	require.True(t, shouldStayOnOpenWindow(open, 22, &drift))
+	// A contradictory reset cannot roll an official window several days early.
+	earlyNow := time.Date(2026, 8, 22, 3, 33, 43, 0, time.UTC)
+	earlyReset := earlyNow.Add(7 * 24 * time.Hour)
+	require.Equal(t, accountWindowSampleIgnore, classifyAccountWindowSample(open, &earlyReset, earlyNow))
 
-	// 占比明显下降，即使 reset_at 只挪了不到 6 小时，也换窗。
-	dropped := end.Add(40 * time.Minute)
-	require.False(t, shouldStayOnOpenWindow(open, 1, &dropped))
+	// Once the current window has ended, a reset for the following week rolls it.
+	rollNow := end.Add(time.Second)
+	nextEnd := end.Add(7 * 24 * time.Hour)
+	require.Equal(t, accountWindowSampleRoll, classifyAccountWindowSample(open, &nextEnd, rollNow))
 
-	// 漏掉了占比回落，但 reset_at 跳了大半天：换窗。
-	jumped := end.Add(7 * 24 * time.Hour)
-	require.False(t, shouldStayOnOpenWindow(open, 22, &jumped))
+	stale := end.Add(-time.Hour)
+	require.Equal(t, accountWindowSampleIgnore, classifyAccountWindowSample(open, &stale, rollNow))
 }
 
-func TestShouldStayOnOpenWindow5hKeepsTightSkew(t *testing.T) {
+func TestClassifyAccountWindowSample5hKeepsTightSkew(t *testing.T) {
 	end := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
 	open := &usagestats.AccountUsageWindow{
 		WindowType:      usagestats.AccountWindowType5h,
@@ -52,9 +52,31 @@ func TestShouldStayOnOpenWindow5hKeepsTightSkew(t *testing.T) {
 		LastUsedPercent: 40,
 	}
 	near := end.Add(accountWindowRollSkew)
-	require.True(t, shouldStayOnOpenWindow(open, 40, &near))
+	require.Equal(t, accountWindowSampleUpdate, classifyAccountWindowSample(open, &near, end.Add(-time.Hour)))
 	far := end.Add(accountWindowRollSkew + time.Minute)
-	require.False(t, shouldStayOnOpenWindow(open, 40, &far))
+	require.Equal(t, accountWindowSampleRoll, classifyAccountWindowSample(open, &far, end.Add(-time.Hour)))
+}
+
+func TestValidAccountWindowSample(t *testing.T) {
+	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	used := 6.0
+	reset := now.Add(7 * 24 * time.Hour)
+	minutes := 7 * 24 * 60
+	require.True(t, validAccountWindowSample(usagestats.AccountWindowType7d, &used, &reset, &minutes, now, true))
+
+	zeroMinutes := 0
+	require.False(t, validAccountWindowSample(usagestats.AccountWindowType7d, &used, &reset, &zeroMinutes, now, true))
+	past := now
+	require.False(t, validAccountWindowSample(usagestats.AccountWindowType7d, &used, &past, &minutes, now, true))
+	invalidPercent := 101.0
+	require.False(t, validAccountWindowSample(usagestats.AccountWindowType7d, &invalidPercent, &reset, &minutes, now, true))
+	require.False(t, validAccountWindowSample(usagestats.AccountWindowType7d, nil, &reset, &minutes, now, true))
+	require.False(t, validAccountWindowSample(usagestats.AccountWindowType7d, &used, nil, &minutes, now, true))
+	require.True(t, validAccountWindowSample(usagestats.AccountWindowType7d, &used, nil, &minutes, now, false))
+
+	eightDayMinutes := 8 * 24 * 60
+	eightDayReset := now.Add(8 * 24 * time.Hour)
+	require.True(t, validAccountWindowSample(usagestats.AccountWindowType7d, &used, &eightDayReset, &eightDayMinutes, now, true))
 }
 
 func TestBuildOpenWindowUsesPreviousReset(t *testing.T) {
