@@ -26,7 +26,7 @@ func (r *CodexWindowRecorder) Observe(ctx context.Context, accountID int64, samp
 	if now.IsZero() {
 		now = time.Now()
 	}
-	r.observeOne(ctx, accountID, usagestats.AccountWindowType7d, sample.Used7dPercent, sample.Reset7dAt, sample.ClosedReason, now)
+	r.observeOne(ctx, accountID, usagestats.AccountWindowType7d, sample.Used7dPercent, sample.Reset7dAt, sample.Window7dMinutes, sample.ClosedReason, now)
 }
 
 func (r *CodexWindowRecorder) CloseOpenWindows(ctx context.Context, accountID int64, reason string) error {
@@ -57,6 +57,7 @@ func (r *CodexWindowRecorder) observeOne(
 	windowType string,
 	used *float64,
 	resetAt *time.Time,
+	windowMinutes *int,
 	reason string,
 	now time.Time,
 ) {
@@ -72,9 +73,19 @@ func (r *CodexWindowRecorder) observeOne(
 		slog.Warn("codex_window_get_open_failed", "account_id", accountID, "window_type", windowType, "error", err)
 		return
 	}
-	if open != nil && shouldStayOnOpenWindow(open, percent, resetAt) {
+	if !validAccountWindowSample(windowType, used, resetAt, windowMinutes, now, open == nil) {
+		slog.Debug("codex_window_sample_ignored", "account_id", accountID, "window_type", windowType, "reason", "invalid_sample")
+		return
+	}
+	action := classifyAccountWindowSample(open, resetAt, now)
+	if action == accountWindowSampleIgnore {
+		slog.Debug("codex_window_sample_ignored", "account_id", accountID, "window_type", windowType, "reason", "conflicts_with_open_window")
+		return
+	}
+	if action == accountWindowSampleUpdate {
 		if err := r.repo.UpdateSample(ctx, open.ID, percent, percent, now); err != nil {
 			slog.Warn("codex_window_sample_failed", "account_id", accountID, "window_type", windowType, "error", err)
+			return
 		}
 		r.recordTrajectory(ctx, open, percent, now)
 		return

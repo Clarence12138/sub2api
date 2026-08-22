@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -177,7 +178,7 @@ func TestCodexWindowRecorder_ResetAtJumpClosesAndOpens(t *testing.T) {
 	rec.Observe(context.Background(), 7, CodexWindowSample{
 		Used7dPercent: &used, Reset7dAt: &firstEnd, Now: now,
 	})
-	nextEnd := firstEnd.Add(5 * time.Hour)
+	nextEnd := firstEnd.Add(7 * 24 * time.Hour)
 	used = 1.0
 	rec.Observe(context.Background(), 7, CodexWindowSample{
 		Used7dPercent: &used, Reset7dAt: &nextEnd, Now: firstEnd.Add(time.Minute),
@@ -213,6 +214,102 @@ func TestCodexWindowRecorder_ResetAtJitterKeepsWindow(t *testing.T) {
 	open := repo.open[usagestats.AccountWindowType7d]
 	require.Equal(t, firstEnd, open.WindowEnd)
 	require.InDelta(t, 23.0, open.LastUsedPercent, 0.001)
+}
+
+func TestCodexWindowRecorder_IgnoresResetAtNowDuringOpenWindow(t *testing.T) {
+	repo := newWindowRepoStub()
+	rec := NewCodexWindowRecorder(repo)
+	now := time.Date(2026, 8, 20, 11, 33, 43, 0, time.UTC)
+	end := now.Add(7 * 24 * time.Hour)
+	used := 6.0
+	rec.Observe(context.Background(), 7, CodexWindowSample{
+		Used7dPercent: &used, Reset7dAt: &end, Now: now,
+	})
+
+	badNow := now.Add(4*time.Hour + 25*time.Minute)
+	zero := 0.0
+	rec.Observe(context.Background(), 7, CodexWindowSample{
+		Used7dPercent: &zero, Reset7dAt: &badNow, Now: badNow,
+	})
+
+	require.Equal(t, 0, repo.rolls)
+	require.Equal(t, 0, repo.samples)
+	require.Len(t, repo.trajectory[repo.open[usagestats.AccountWindowType7d].ID], 1)
+	require.InDelta(t, 6, repo.open[usagestats.AccountWindowType7d].LastUsedPercent, 0.001)
+}
+
+func TestCodexWindowRecorder_IgnoresEarlyFutureReset(t *testing.T) {
+	repo := newWindowRepoStub()
+	rec := NewCodexWindowRecorder(repo)
+	now := time.Date(2026, 8, 20, 11, 33, 43, 0, time.UTC)
+	end := now.Add(7 * 24 * time.Hour)
+	used := 6.0
+	rec.Observe(context.Background(), 7, CodexWindowSample{
+		Used7dPercent: &used, Reset7dAt: &end, Now: now,
+	})
+
+	probeNow := now.Add(2 * 24 * time.Hour)
+	probeEnd := probeNow.Add(7 * 24 * time.Hour)
+	zero := 0.0
+	rec.Observe(context.Background(), 7, CodexWindowSample{
+		Used7dPercent: &zero, Reset7dAt: &probeEnd, Now: probeNow,
+	})
+
+	require.Equal(t, 0, repo.rolls)
+	require.Equal(t, 0, repo.samples)
+	require.Len(t, repo.trajectory[repo.open[usagestats.AccountWindowType7d].ID], 1)
+	require.Equal(t, end, repo.open[usagestats.AccountWindowType7d].WindowEnd)
+	require.InDelta(t, 6, repo.open[usagestats.AccountWindowType7d].LastUsedPercent, 0.001)
+}
+
+func TestCodexWindowRecorder_UpdateConflictSkipsTrajectory(t *testing.T) {
+	repo := newWindowRepoStub()
+	rec := NewCodexWindowRecorder(repo)
+	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	end := now.Add(7 * 24 * time.Hour)
+	used := 6.0
+	rec.Observe(context.Background(), 7, CodexWindowSample{
+		Used7dPercent: &used, Reset7dAt: &end, Now: now,
+	})
+	windowID := repo.open[usagestats.AccountWindowType7d].ID
+	require.Len(t, repo.trajectory[windowID], 1)
+
+	repo.updateErr = errors.New("stale window")
+	used = 7.0
+	rec.Observe(context.Background(), 7, CodexWindowSample{
+		Used7dPercent: &used, Reset7dAt: &end, Now: now.Add(time.Minute),
+	})
+
+	require.Equal(t, 1, repo.samples)
+	require.Len(t, repo.trajectory[windowID], 1)
+}
+
+func TestCodexWindowRecorder_ResetOnlySampleIsIgnored(t *testing.T) {
+	repo := newWindowRepoStub()
+	rec := NewCodexWindowRecorder(repo)
+	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	end := now.Add(7 * 24 * time.Hour)
+	rec.Observe(context.Background(), 7, CodexWindowSample{
+		Reset7dAt: &end, Now: now,
+	})
+
+	require.Equal(t, 0, repo.upserts)
+	require.Nil(t, repo.open[usagestats.AccountWindowType7d])
+}
+
+func TestCodexWindowRecorder_InvalidWindowMinutesCannotOpen(t *testing.T) {
+	repo := newWindowRepoStub()
+	rec := NewCodexWindowRecorder(repo)
+	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	end := now.Add(7 * 24 * time.Hour)
+	used := 0.0
+	minutes := 0
+	rec.Observe(context.Background(), 7, CodexWindowSample{
+		Used7dPercent: &used, Reset7dAt: &end, Window7dMinutes: &minutes, Now: now,
+	})
+
+	require.Equal(t, 0, repo.upserts)
+	require.Nil(t, repo.open[usagestats.AccountWindowType7d])
 }
 
 func TestInferAccountWindowLimit(t *testing.T) {

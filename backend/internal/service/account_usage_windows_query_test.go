@@ -141,6 +141,23 @@ func TestFinalizeWindowSamples_KeepsTickSlopeAfterDownsample(t *testing.T) {
 	require.Greater(t, *slope, 20.0)
 }
 
+func TestSampleFromCodexExtraIncludes7dWindowMinutes(t *testing.T) {
+	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	reset := now.Add(7 * 24 * time.Hour)
+	sample := sampleFromCodexExtra(map[string]any{
+		"codex_7d_used_percent":   6.0,
+		"codex_7d_reset_at":       reset.Format(time.RFC3339),
+		"codex_7d_window_minutes": "10080",
+	}, now, usagestats.AccountWindowClosedProbe)
+
+	require.NotNil(t, sample.Used7dPercent)
+	require.InDelta(t, 6, *sample.Used7dPercent, 0.001)
+	require.NotNil(t, sample.Reset7dAt)
+	require.Equal(t, reset, *sample.Reset7dAt)
+	require.NotNil(t, sample.Window7dMinutes)
+	require.Equal(t, 10080, *sample.Window7dMinutes)
+}
+
 func TestAccountUsageService_GetUsageWindows_RejectsBadType(t *testing.T) {
 	svc := &AccountUsageService{windowRepo: newWindowRepoStub()}
 	_, err := svc.GetUsageWindows(context.Background(), 1, time.Now().Add(-time.Hour), time.Now(), "monthly")
