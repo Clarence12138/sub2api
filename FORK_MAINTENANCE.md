@@ -23,6 +23,9 @@ upstream/main  ──定期 merge──►  origin/main（官方 + 二开，可�
 
 ## 日常开发
 
+单人开发，合回 `main` **默认本地 fast-forward**，不提 PR。
+`main` 若有新提交，先把功能分支 rebase 到 `origin/main`，再快进。不要把官方直接 merge 进功能分支。
+
 ```bash
 # 1. 更新本地 main
 git fetch origin
@@ -34,21 +37,24 @@ git switch -c feat/your-feature
 
 # 3. 开发、小步 commit（Conventional Commits + 中文）
 
-# 4. 推送并合回 main（PR 或本地 fast-forward merge）
-git push -u origin HEAD
-# … 合并进 main 后删分支
-git branch -d feat/your-feature
-git push origin --delete feat/your-feature
-```
-
-功能分支若落后于 `main`，用 rebase 跟上（不要把官方直接 merge 进功能分支）：
-
-```bash
+# 4. 合回 main（fast-forward）
 git fetch origin
 git switch feat/your-feature
-git rebase origin/main
-git push --force-with-lease
+git rebase origin/main          # main 没动也可以跑，是空操作
+git switch main
+git pull --ff-only origin main
+git merge --ff-only feat/your-feature
+git push origin main
+
+# 5. 删功能分支
+git branch -d feat/your-feature
+git push origin --delete feat/your-feature   # 若曾推过远端分支
 ```
+
+若功能分支已经推过远端、rebase 后需要更新远端分支：`git push --force-with-lease`。
+**不要**对已共享的 `main` 做 rebase + force。
+
+PR 只用于冲突多的官方升级（见下文），或明确需要单独留变更说明的情况。
 
 ## 同步官方（merge，不是 rebase）
 

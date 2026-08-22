@@ -294,9 +294,15 @@ git switch main
 git pull --ff-only origin main
 git switch -c feat/xxx
 
-# 功能分支跟上主干（rebase 的是 origin/main，不是直接 rebase 官方）
+# 合回 main：默认本地 fast-forward，不提 PR
+# main 有新提交时先 rebase 功能分支，再快进
 git fetch origin
+git switch feat/xxx
 git rebase origin/main
+git switch main
+git pull --ff-only origin main
+git merge --ff-only feat/xxx
+git push origin main
 ```
 
 ### 前端操作
