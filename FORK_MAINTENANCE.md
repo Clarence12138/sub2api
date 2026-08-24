@@ -121,40 +121,52 @@ git log --oneline main..upstream/main    # 官方多了什么
 git diff main...upstream/main            # 代码差异
 ```
 
-## 发版镜像
+## 发版与上线
 
-本 fork 发布到：
+镜像仓库：`ghcr.io/clarence12138/sub2api`。
 
-```text
-ghcr.io/clarence12138/sub2api
-```
-
-在已验证的 `main` 上打 tag 并推送：
-
-```bash
-git tag v0.1.169-clarence.1
-git push origin main --tags
-# 或只推 tag：
-# git push origin v0.1.169-clarence.1
-```
-
-约定：
-
-| 类型 | 格式 | 示例 |
-|------|------|------|
-| 官方版本 | `vX.Y.Z` | `v0.1.169` |
-| 本 fork 发版 | `vX.Y.Z-clarence.N` | `v0.1.169-clarence.1` |
+| 类型 | Git tag | 镜像 tag | 示例 |
+|------|---------|----------|------|
+| 官方版本 | `vX.Y.Z` | `X.Y.Z` | `v0.1.178` |
+| 本 fork 发版 | `vX.Y.Z-clarence.N` | `X.Y.Z-clarence.N` | `v0.1.178-clarence.3` |
 
 同一官方版本上的二次发补丁递增 `N`：`clarence.2`、`clarence.3`。
+
+生产机（`ccs`）**禁止** `go build` / `pnpm build` / `docker build`。详见 `AGENTS.md`。
+
+### 日常改动：本机热部署（默认）
+
+小功能 / bugfix 不要打 tag 等 GHCR（Actions 大约 12 分钟）。在本机交叉编译 `linux/amd64`，把镜像 load 到 `ccs` 再换 pin：
+
+```bash
+./scripts/hot-deploy.sh                     # 自动下一个 clarence.N
+./scripts/hot-deploy.sh 0.1.178-clarence.4  # 指定版本
+./scripts/hot-deploy.sh --yes               # 非交互
+./scripts/hot-deploy.sh --dry-run           # 只看计划
+```
+
+脚本会：构建前端 → `GOOS=linux GOARCH=amd64` 编进 embed 二进制 → 用 `Dockerfile.goreleaser` 打运行时镜像 → `docker save` 到 `ccs` → 改 compose pin → `up -d`。
+
+不会创建或推送 git tag。**不要**为热部署 `git push origin v*`，那会触发 Release workflow。
+也不要在 `ccs` 上对热部署 tag 执行 `docker compose pull`（GHCR 里还没有这个 tag）。
+
+### 合并升级官方：走 GHCR
+
+`./scripts/sync-upstream.sh` 或 `chore/upgrade-*` 合进 `main` 并验证后，打 tag 推送，等 Actions 出镜像，再在 `ccs` pull 换 pin：
+
+```bash
+git tag v0.1.178-clarence.1
+git push origin main --tags
+# 或只推 tag：
+# git push origin v0.1.178-clarence.1
+```
 
 推送后会发布例如：
 
 ```text
-ghcr.io/clarence12138/sub2api:0.1.169-clarence.1
+ghcr.io/clarence12138/sub2api:0.1.178-clarence.1
 ghcr.io/clarence12138/sub2api:latest
 ```
-
-生产机（`ccs`）只拉已发布镜像并重启，**禁止**在上面 `go build` / `pnpm build` / `docker build`。GitHub Actions 或 GHCR 不可用时停下来，不要把生产机当构建回退。详见 `AGENTS.md`。
 
 ## 当前定制（摘要）
 

@@ -247,11 +247,14 @@ git add ent/       # 生成的文件也要提交
 
 ---
 
-### 坑 12：GitHub / CI 故障时不要在生产机构建
+### 坑 12：不要在生产机构建
 
-**问题**：发版依赖 GitHub Actions 构建镜像并推 GHCR。上游或 GitHub 异常时，Agent 容易改去 SSH 进 `ccs` 本地 `go build` / `pnpm build` / `docker build`，把生产机 CPU 打满甚至死机。
+**问题**：无论 GHCR 正不正常，Agent 都容易 SSH 进 `ccs` 跑 `go build` / `pnpm build` / `docker build`，把生产机 CPU 打满甚至死机。
 
-**解决**：`ccs` 只拉已有镜像并重启。CI/GHCR 不可用就停下来告诉人，等恢复或用独立构建机。完整约束见 `AGENTS.md`。
+**解决**：
+- 日常改动：本机 `./scripts/hot-deploy.sh`（交叉编译后 load 到 `ccs`）
+- 合并升级官方：打 tag 走 GHCR，`ccs` 只 pull
+- 不要在 `ccs` 上构建。完整约束见 `AGENTS.md` / `FORK_MAINTENANCE.md`。
 
 ## 五、常用命令速查
 
@@ -276,11 +279,14 @@ psql -U sub2api -h 127.0.0.1 -d sub2api -f migration.sql
 分支模型与发版约定见 `FORK_MAINTENANCE.md` / `AGENTS.md`。摘要：
 
 ```bash
+# 日常上线（本机热部署，不走 GHCR）
+./scripts/hot-deploy.sh
+
 # 同步官方（推荐脚本；对 main 使用 merge，不是 rebase）
 ./scripts/sync-upstream.sh
 # 验证后：
 git push origin main
-# 发版：git tag vX.Y.Z-clarence.N && git push origin vX.Y.Z-clarence.N
+# 官方升级发版走 GHCR：git tag vX.Y.Z-clarence.N && git push origin vX.Y.Z-clarence.N
 
 # 或手动
 git fetch upstream --tags

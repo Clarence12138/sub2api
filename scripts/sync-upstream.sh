@@ -61,7 +61,7 @@ if [[ "${merge_status}" -ne 0 ]]; then
   echo "     (or abort with: git merge --abort)"
   echo "  2. Run validation/build."
   echo "  3. Push with: git push origin ${BRANCH}"
-  echo "  4. Tag if releasing: git tag vX.Y.Z-clarence.N && git push origin vX.Y.Z-clarence.N"
+  echo "  4. Official upgrade release via GHCR: git tag vX.Y.Z-clarence.N && git push origin vX.Y.Z-clarence.N"
   exit "${merge_status}"
 fi
 
@@ -71,5 +71,5 @@ echo "Next steps:"
 echo "  1. Run your validation/build."
 echo "  2. Push with: git push origin ${BRANCH}"
 echo "     (merge 后通常不需要 --force-with-lease)"
-echo "  3. Tag if releasing: git tag vX.Y.Z-clarence.N && git push origin vX.Y.Z-clarence.N"
+echo "  3. Official upgrade release via GHCR: git tag vX.Y.Z-clarence.N && git push origin vX.Y.Z-clarence.N"
 echo "  See FORK_MAINTENANCE.md for the full workflow."
