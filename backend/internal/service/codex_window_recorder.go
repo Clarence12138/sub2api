@@ -30,10 +30,13 @@ func (r *CodexWindowRecorder) Observe(ctx context.Context, accountID int64, samp
 }
 
 func (r *CodexWindowRecorder) CloseOpenWindows(ctx context.Context, accountID int64, reason string) error {
+	return r.closeOpenWindowsAt(ctx, accountID, reason, time.Now())
+}
+
+func (r *CodexWindowRecorder) closeOpenWindowsAt(ctx context.Context, accountID int64, reason string, now time.Time) error {
 	if r == nil || r.repo == nil || accountID <= 0 {
 		return nil
 	}
-	now := time.Now()
 	var closed []*usagestats.AccountUsageWindow
 	for _, windowType := range []string{usagestats.AccountWindowType7d} {
 		open, err := r.repo.GetOpen(ctx, accountID, windowType)
@@ -42,6 +45,9 @@ func (r *CodexWindowRecorder) CloseOpenWindows(ctx context.Context, accountID in
 		}
 		if open == nil {
 			continue
+		}
+		if now.After(open.WindowStart) && now.Before(open.WindowEnd) {
+			open.WindowEnd = now.UTC()
 		}
 		if err := r.settle(ctx, open, defaultWindowClosedReason(reason, open.WindowEnd, now), now); err != nil {
 			return err
@@ -77,7 +83,7 @@ func (r *CodexWindowRecorder) observeOne(
 		slog.Debug("codex_window_sample_ignored", "account_id", accountID, "window_type", windowType, "reason", "invalid_sample")
 		return
 	}
-	action := classifyAccountWindowSample(open, resetAt, now)
+	action := classifyAccountWindowSample(open, used, resetAt, windowMinutes, now)
 	if action == accountWindowSampleIgnore {
 		slog.Debug("codex_window_sample_ignored", "account_id", accountID, "window_type", windowType, "reason", "conflicts_with_open_window")
 		return
@@ -89,6 +95,20 @@ func (r *CodexWindowRecorder) observeOne(
 		}
 		r.recordTrajectory(ctx, open, percent, now)
 		return
+	}
+
+	if open != nil && resetAt != nil {
+		if cut, ok := truncateWindowEndForReset(open, *resetAt, windowMinutes, now); ok {
+			slog.Info("codex_window_official_reset_roll",
+				"account_id", accountID,
+				"window_type", windowType,
+				"old_end", open.WindowEnd,
+				"cut_end", cut,
+				"next_end", resetAt.UTC(),
+				"used_percent", percent,
+			)
+			open.WindowEnd = cut
+		}
 	}
 
 	var prevEnd *time.Time

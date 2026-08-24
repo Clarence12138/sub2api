@@ -131,20 +131,21 @@ func (r *accountUsageWindowRepository) closeOne(ctx context.Context, exec sqlExe
 		UPDATE account_usage_windows
 		SET status = 'closed',
 			closed_reason = $2,
-			peak_used_percent = $3,
-			last_used_percent = $4,
-			local_cost = $5,
-			standard_cost = $6,
-			user_cost = $7,
-			requests = $8,
-			tokens = $9,
-			inferred_limit_usd = $10,
-			inferred_confidence = $11,
-			model_breakdown = $12,
-			sampled_at = $13,
+			window_end = $3,
+			peak_used_percent = $4,
+			last_used_percent = $5,
+			local_cost = $6,
+			standard_cost = $7,
+			user_cost = $8,
+			requests = $9,
+			tokens = $10,
+			inferred_limit_usd = $11,
+			inferred_confidence = $12,
+			model_breakdown = $13,
+			sampled_at = $14,
 			updated_at = NOW()
 		WHERE id = $1 AND status = 'open'
-	`, row.ID, reason, row.PeakUsedPercent, row.LastUsedPercent,
+	`, row.ID, reason, row.WindowEnd, row.PeakUsedPercent, row.LastUsedPercent,
 		row.LocalCost, row.StandardCost, row.UserCost, row.Requests, row.Tokens,
 		row.InferredLimitUSD, row.InferredConfidence, breakdown, row.SampledAt)
 	if err != nil {

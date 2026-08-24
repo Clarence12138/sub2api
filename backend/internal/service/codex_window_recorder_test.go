@@ -102,6 +102,10 @@ func (s *windowRepoStub) CloseAndOpen(_ context.Context, closed *usagestats.Acco
 func (s *windowRepoStub) CloseWindows(_ context.Context, rows []*usagestats.AccountUsageWindow) error {
 	s.closes++
 	for _, row := range rows {
+		if row != nil {
+			copy := *row
+			s.closed[row.WindowType] = &copy
+		}
 		delete(s.open, row.WindowType)
 	}
 	return nil
@@ -238,6 +242,35 @@ func TestCodexWindowRecorder_IgnoresResetAtNowDuringOpenWindow(t *testing.T) {
 	require.InDelta(t, 6, repo.open[usagestats.AccountWindowType7d].LastUsedPercent, 0.001)
 }
 
+func TestCodexWindowRecorder_AgedOfficialResetTruncatesAndOpens(t *testing.T) {
+	repo := newWindowRepoStub()
+	rec := NewCodexWindowRecorder(repo)
+	start := time.Date(2026, 8, 20, 3, 33, 52, 0, time.UTC)
+	end := time.Date(2026, 8, 27, 3, 33, 44, 0, time.UTC)
+	used := 15.0
+	rec.Observe(context.Background(), 20, CodexWindowSample{
+		Used7dPercent: &used, Reset7dAt: &end, Now: start,
+	})
+
+	probeNow := time.Date(2026, 8, 24, 3, 7, 7, 0, time.UTC)
+	nextEnd := time.Date(2026, 8, 31, 0, 44, 28, 0, time.UTC)
+	resetUsed := 1.0
+	minutes := 7 * 24 * 60
+	rec.Observe(context.Background(), 20, CodexWindowSample{
+		Used7dPercent: &resetUsed, Reset7dAt: &nextEnd, Window7dMinutes: &minutes, Now: probeNow,
+	})
+
+	require.Equal(t, 1, repo.rolls)
+	closed := repo.closed[usagestats.AccountWindowType7d]
+	require.NotNil(t, closed)
+	require.Equal(t, time.Date(2026, 8, 24, 0, 44, 28, 0, time.UTC), closed.WindowEnd)
+	open := repo.open[usagestats.AccountWindowType7d]
+	require.Equal(t, closed.WindowEnd, open.WindowStart)
+	require.Equal(t, nextEnd, open.WindowEnd)
+	require.InDelta(t, 1.0, open.PeakUsedPercent, 0.001)
+	require.NotEmpty(t, repo.trajectory[open.ID])
+}
+
 func TestCodexWindowRecorder_IgnoresEarlyFutureReset(t *testing.T) {
 	repo := newWindowRepoStub()
 	rec := NewCodexWindowRecorder(repo)
@@ -340,6 +373,22 @@ func TestCodexWindowRecorder_CloseOpenWindowsSettles(t *testing.T) {
 	require.NoError(t, rec.CloseOpenWindows(context.Background(), 7, usagestats.AccountWindowClosedResetCredit))
 	require.Equal(t, 1, repo.closes)
 	require.Nil(t, repo.open[usagestats.AccountWindowType7d])
+}
+
+func TestCodexWindowRecorder_CloseOpenWindowsTruncatesEnd(t *testing.T) {
+	repo := newWindowRepoStub()
+	rec := NewCodexWindowRecorder(repo)
+	now := time.Date(2026, 8, 20, 3, 33, 52, 0, time.UTC)
+	reset := time.Date(2026, 8, 27, 3, 33, 44, 0, time.UTC)
+	used := 15.0
+	rec.Observe(context.Background(), 20, CodexWindowSample{
+		Used7dPercent: &used, Reset7dAt: &reset, Now: now,
+	})
+	cut := time.Date(2026, 8, 24, 0, 44, 28, 0, time.UTC)
+	require.NoError(t, rec.closeOpenWindowsAt(context.Background(), 20, usagestats.AccountWindowClosedResetCredit, cut))
+	require.Equal(t, 1, repo.closes)
+	require.Nil(t, repo.open[usagestats.AccountWindowType7d])
+	require.Equal(t, cut, repo.closed[usagestats.AccountWindowType7d].WindowEnd)
 }
 
 func TestBuildAccountWindowLimitTrend(t *testing.T) {

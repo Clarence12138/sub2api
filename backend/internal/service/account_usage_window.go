@@ -16,6 +16,13 @@ const (
 	// 官方 7d 时长偶尔会有取整差异，允许 6d-8d，拒绝 0 等占位窗口。
 	accountWindow7dMinMinutes = 6 * 24 * 60
 	accountWindow7dMaxMinutes = 8 * 24 * 60
+	// accountWindowResetPercentDrop 官方占比至少下降这么多，才认为窗口被重置。
+	accountWindowResetPercentDrop = 3.0
+	// accountWindowOfficialResetLowPercent 重置后常见 0%/1%，即使降幅不到 3% 也认。
+	accountWindowOfficialResetLowPercent = 1.0
+	// accountWindowOfficialResetConfirmAfter 新窗已经活过此时长，才把提前换窗当成官方重置。
+	// 瞬时 0% + now+7d 的 implied start ≈ now，过不了这道门。
+	accountWindowOfficialResetConfirmAfter = 10 * time.Minute
 	// accountWindowLowPercent 低于此峰值不反推额度。
 	accountWindowLowPercent = 8.0
 	// accountWindowMediumPercent 低于此峰值为中等置信。
@@ -116,7 +123,7 @@ func sameAccountWindowWithin(prevEnd, nextEnd time.Time, skew time.Duration) boo
 	return absDuration(nextEnd.Sub(prevEnd)) <= skew
 }
 
-func classifyAccountWindowSample(open *usagestats.AccountUsageWindow, resetAt *time.Time, now time.Time) accountWindowSampleAction {
+func classifyAccountWindowSample(open *usagestats.AccountUsageWindow, used *float64, resetAt *time.Time, windowMinutes *int, now time.Time) accountWindowSampleAction {
 	if open == nil {
 		return accountWindowSampleRoll
 	}
@@ -133,9 +140,17 @@ func classifyAccountWindowSample(open *usagestats.AccountUsageWindow, resetAt *t
 	if sameAccountWindowWithin(open.WindowEnd, nextEnd, accountWindow7dRollSkew) {
 		return accountWindowSampleUpdate
 	}
-	// 普通 probe 不能在官方窗口结束前提前换窗。主动 credit reset
-	// 走 CloseOpenWindows 的显式路径，不依赖这里的启发式判断。
+	percent := 0.0
+	if used != nil {
+		percent = *used
+	}
+	// 未到期时默认忽略提前换窗，避免瞬时 0% + 新 reset_at 误切。
+	// 站外官方重置会留下「占比已掉、新窗已经活过确认期」的稳定样本，这时放行。
+	// 本站 credit reset 仍走 CloseOpenWindows。
 	if now.Before(open.WindowEnd) {
+		if isConfirmedOfficialReset(open, percent, nextEnd, windowMinutes, now) {
+			return accountWindowSampleRoll
+		}
 		return accountWindowSampleIgnore
 	}
 	// 新 reset 必须明确落在当前窗口之后；旧值、倒退值都视为陈旧样本。
@@ -143,6 +158,78 @@ func classifyAccountWindowSample(open *usagestats.AccountUsageWindow, resetAt *t
 		return accountWindowSampleIgnore
 	}
 	return accountWindowSampleRoll
+}
+
+func isConfirmedOfficialReset(open *usagestats.AccountUsageWindow, percent float64, nextEnd time.Time, windowMinutes *int, now time.Time) bool {
+	if open == nil || nextEnd.IsZero() {
+		return false
+	}
+	if windowMinutes != nil {
+		if *windowMinutes < accountWindow7dMinMinutes || *windowMinutes > accountWindow7dMaxMinutes {
+			return false
+		}
+	}
+	if !officialResetPercentDropped(windowUsedPercent(open), percent) {
+		return false
+	}
+	impliedStart := officialResetImpliedStart(nextEnd, windowMinutes, open.WindowType)
+	if impliedStart.IsZero() {
+		return false
+	}
+	if now.Sub(impliedStart) < accountWindowOfficialResetConfirmAfter {
+		return false
+	}
+	if impliedStart.After(open.WindowStart.Add(accountWindow7dRollSkew)) {
+		return true
+	}
+	return nextEnd.After(open.WindowEnd.Add(accountWindow7dRollSkew))
+}
+
+func officialResetImpliedStart(resetAt time.Time, windowMinutes *int, windowType string) time.Time {
+	if resetAt.IsZero() {
+		return time.Time{}
+	}
+	duration := windowDuration(windowType)
+	if windowMinutes != nil && *windowMinutes > 0 {
+		duration = time.Duration(*windowMinutes) * time.Minute
+	}
+	if duration <= 0 {
+		return time.Time{}
+	}
+	return resetAt.UTC().Add(-duration)
+}
+
+func officialResetPercentDropped(prev, next float64) bool {
+	if prev-next >= accountWindowResetPercentDrop {
+		return true
+	}
+	return next <= accountWindowOfficialResetLowPercent && next < prev
+}
+
+func windowUsedPercent(open *usagestats.AccountUsageWindow) float64 {
+	if open == nil {
+		return 0
+	}
+	if open.PeakUsedPercent > open.LastUsedPercent {
+		return open.PeakUsedPercent
+	}
+	return open.LastUsedPercent
+}
+
+// truncateWindowEndForReset 把旧窗截到新官方窗起点，避免重置后用量算进旧窗。
+func truncateWindowEndForReset(open *usagestats.AccountUsageWindow, resetAt time.Time, windowMinutes *int, now time.Time) (time.Time, bool) {
+	if open == nil || resetAt.IsZero() {
+		return time.Time{}, false
+	}
+	impliedStart := officialResetImpliedStart(resetAt, windowMinutes, open.WindowType)
+	cut := impliedStart
+	if cut.IsZero() || !cut.After(open.WindowStart) || !cut.Before(open.WindowEnd.Add(-accountWindow7dRollSkew)) {
+		cut = now.UTC()
+	}
+	if !cut.After(open.WindowStart) || !cut.Before(open.WindowEnd) {
+		return time.Time{}, false
+	}
+	return cut, true
 }
 
 func validAccountWindowSample(windowType string, used *float64, resetAt *time.Time, windowMinutes *int, now time.Time, opening bool) bool {

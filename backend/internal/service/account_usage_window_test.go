@@ -23,24 +23,35 @@ func TestClassifyAccountWindowSample7d(t *testing.T) {
 		LastUsedPercent: 23,
 	}
 
+	used := 23.0
 	jitter := end.Add(3 * time.Minute)
-	require.Equal(t, accountWindowSampleUpdate, classifyAccountWindowSample(open, &jitter, end.Add(-24*time.Hour)))
+	require.Equal(t, accountWindowSampleUpdate, classifyAccountWindowSample(open, &used, &jitter, nil, end.Add(-24*time.Hour)))
 	back := end.Add(-3 * time.Minute)
-	require.Equal(t, accountWindowSampleUpdate, classifyAccountWindowSample(open, &back, end.Add(-24*time.Hour)))
-	require.Equal(t, accountWindowSampleUpdate, classifyAccountWindowSample(open, nil, end.Add(-24*time.Hour)))
+	require.Equal(t, accountWindowSampleUpdate, classifyAccountWindowSample(open, &used, &back, nil, end.Add(-24*time.Hour)))
+	require.Equal(t, accountWindowSampleUpdate, classifyAccountWindowSample(open, &used, nil, nil, end.Add(-24*time.Hour)))
 
 	// A contradictory reset cannot roll an official window several days early.
 	earlyNow := time.Date(2026, 8, 22, 3, 33, 43, 0, time.UTC)
 	earlyReset := earlyNow.Add(7 * 24 * time.Hour)
-	require.Equal(t, accountWindowSampleIgnore, classifyAccountWindowSample(open, &earlyReset, earlyNow))
+	zero := 0.0
+	require.Equal(t, accountWindowSampleIgnore, classifyAccountWindowSample(open, &zero, &earlyReset, nil, earlyNow))
+
+	// Stable official reset: usage dropped and the new window has already been live.
+	agedNow := time.Date(2026, 8, 24, 3, 4, 27, 0, time.UTC)
+	agedReset := time.Date(2026, 8, 31, 0, 44, 28, 0, time.UTC)
+	resetUsed := 1.0
+	minutes := 7 * 24 * 60
+	require.Equal(t, accountWindowSampleRoll, classifyAccountWindowSample(open, &resetUsed, &agedReset, &minutes, agedNow))
+	// Same aged reset without a usage drop is still treated as a stale/contradictory probe.
+	require.Equal(t, accountWindowSampleIgnore, classifyAccountWindowSample(open, &used, &agedReset, &minutes, agedNow))
 
 	// Once the current window has ended, a reset for the following week rolls it.
 	rollNow := end.Add(time.Second)
 	nextEnd := end.Add(7 * 24 * time.Hour)
-	require.Equal(t, accountWindowSampleRoll, classifyAccountWindowSample(open, &nextEnd, rollNow))
+	require.Equal(t, accountWindowSampleRoll, classifyAccountWindowSample(open, &zero, &nextEnd, nil, rollNow))
 
 	stale := end.Add(-time.Hour)
-	require.Equal(t, accountWindowSampleIgnore, classifyAccountWindowSample(open, &stale, rollNow))
+	require.Equal(t, accountWindowSampleIgnore, classifyAccountWindowSample(open, &zero, &stale, nil, rollNow))
 }
 
 func TestClassifyAccountWindowSample5hKeepsTightSkew(t *testing.T) {
@@ -51,10 +62,29 @@ func TestClassifyAccountWindowSample5hKeepsTightSkew(t *testing.T) {
 		PeakUsedPercent: 40,
 		LastUsedPercent: 40,
 	}
+	used := 40.0
 	near := end.Add(accountWindowRollSkew)
-	require.Equal(t, accountWindowSampleUpdate, classifyAccountWindowSample(open, &near, end.Add(-time.Hour)))
+	require.Equal(t, accountWindowSampleUpdate, classifyAccountWindowSample(open, &used, &near, nil, end.Add(-time.Hour)))
 	far := end.Add(accountWindowRollSkew + time.Minute)
-	require.Equal(t, accountWindowSampleRoll, classifyAccountWindowSample(open, &far, end.Add(-time.Hour)))
+	require.Equal(t, accountWindowSampleRoll, classifyAccountWindowSample(open, &used, &far, nil, end.Add(-time.Hour)))
+}
+
+func TestTruncateWindowEndForReset(t *testing.T) {
+	open := &usagestats.AccountUsageWindow{
+		WindowType:  usagestats.AccountWindowType7d,
+		WindowStart: time.Date(2026, 8, 20, 3, 33, 52, 0, time.UTC),
+		WindowEnd:   time.Date(2026, 8, 27, 3, 33, 44, 0, time.UTC),
+	}
+	resetAt := time.Date(2026, 8, 31, 0, 44, 28, 0, time.UTC)
+	now := time.Date(2026, 8, 24, 3, 7, 0, 0, time.UTC)
+	minutes := 7 * 24 * 60
+	cut, ok := truncateWindowEndForReset(open, resetAt, &minutes, now)
+	require.True(t, ok)
+	require.Equal(t, time.Date(2026, 8, 24, 0, 44, 28, 0, time.UTC), cut)
+
+	naturalReset := open.WindowEnd.Add(7 * 24 * time.Hour)
+	_, ok = truncateWindowEndForReset(open, naturalReset, &minutes, open.WindowEnd.Add(time.Minute))
+	require.False(t, ok)
 }
 
 func TestValidAccountWindowSample(t *testing.T) {
