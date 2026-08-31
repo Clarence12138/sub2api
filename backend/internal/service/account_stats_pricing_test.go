@@ -506,7 +506,7 @@ func TestTryModelFilePricing_AppliesServiceTierPricing(t *testing.T) {
 		want        float64
 	}{
 		{name: "standard", serviceTier: "", want: 0.265},
-		{name: "priority", serviceTier: "priority", want: 0.53},
+		{name: "priority", serviceTier: "priority", want: 0.6625},
 		{name: "flex", serviceTier: "flex", want: 0.1325},
 	}
 
@@ -545,8 +545,8 @@ func TestTryModelFilePricing_CombinesPriorityAndLongContextPricing(t *testing.T)
 	result := tryModelFilePricing(bs, "gpt-5.6-sol", tokens, "priority")
 
 	require.NotNil(t, result)
-	// priority 单价先应用，再叠加长上下文输入 2x、输出 1.5x。
-	require.InDelta(t, 0.534, *result, 1e-12)
+	// 订阅 Fast：标准价 × 长上下文 × 2.5，不用 API priority 单价。
+	require.InDelta(t, 0.6675, *result, 1e-12)
 }
 
 func TestTryModelFilePricing_PricingNotFound(t *testing.T) {
@@ -887,7 +887,7 @@ func TestApplyAccountStatsCost_UsesUsageLogServiceTier(t *testing.T) {
 	)
 
 	require.NotNil(t, usageLog.AccountStatsCost)
-	require.InDelta(t, 0.4, *usageLog.AccountStatsCost, 1e-12)
+	require.InDelta(t, 0.5, *usageLog.AccountStatsCost, 1e-12)
 }
 
 // ---------------------------------------------------------------------------

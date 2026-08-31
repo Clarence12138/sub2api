@@ -118,11 +118,47 @@ const (
 	openAIGPT54LongContextOutputMultiplier = 1.5
 )
 
+const (
+	// ChatGPT / Codex 订阅 Fast：GPT-5.6 / GPT-5.5 按标准价 2.5x 扣额度。
+	// 见 https://developers.openai.com/codex/speed ；不使用 API *_priority 单价。
+	openAIChatGPTFastCreditMultiplier    = 2.5
+	defaultPriorityServiceTierMultiplier = 2.0
+)
+
 func normalizeBillingServiceTier(serviceTier string) string {
 	return strings.ToLower(strings.TrimSpace(serviceTier))
 }
 
-func usePriorityServiceTierPricing(serviceTier string, pricing *ModelPricing) bool {
+func preferOpenAISubscriptionServiceTierBilling(model string) bool {
+	if strings.TrimSpace(model) == "" {
+		return false
+	}
+	if isOpenAIGPT56Model(model) {
+		return true
+	}
+	if normalizeKnownOpenAICodexModel(model) != "" {
+		return true
+	}
+	lower := strings.ToLower(strings.TrimSpace(model))
+	return strings.HasPrefix(lower, "gpt-") || strings.Contains(lower, "codex")
+}
+
+func usesOpenAIChatGPTFastCreditMultiplier(model string) bool {
+	if isOpenAIGPT56Model(model) {
+		return true
+	}
+	switch normalizeKnownOpenAICodexModel(model) {
+	case "gpt-5.5", "gpt-5.5-pro":
+		return true
+	default:
+		return false
+	}
+}
+
+func usePriorityServiceTierPricing(serviceTier string, pricing *ModelPricing, model string) bool {
+	if preferOpenAISubscriptionServiceTierBilling(model) {
+		return false
+	}
 	if pricing == nil || normalizeBillingServiceTier(serviceTier) != "priority" {
 		return false
 	}
@@ -130,10 +166,13 @@ func usePriorityServiceTierPricing(serviceTier string, pricing *ModelPricing) bo
 		pricing.CacheCreationPricePerTokenPriority > 0 || pricing.CacheReadPricePerTokenPriority > 0
 }
 
-func serviceTierCostMultiplier(serviceTier string) float64 {
+func serviceTierCostMultiplier(serviceTier, model string) float64 {
 	switch normalizeBillingServiceTier(serviceTier) {
 	case "priority":
-		return 2.0
+		if usesOpenAIChatGPTFastCreditMultiplier(model) {
+			return openAIChatGPTFastCreditMultiplier
+		}
+		return defaultPriorityServiceTierMultiplier
 	case "flex":
 		return 0.5
 	default:
@@ -1126,7 +1165,7 @@ func (s *BillingService) calculateTokenCost(resolved *ResolvedPricing, input Cos
 		applyLongCtx = applyLongCtx && *input.LongContextBillingEnabled
 	}
 
-	breakdown := s.computeTokenBreakdown(pricing, input.Tokens, input.RateMultiplier, input.ServiceTier, applyLongCtx)
+	breakdown := s.computeTokenBreakdown(input.Model, pricing, input.Tokens, input.RateMultiplier, input.ServiceTier, applyLongCtx)
 	applyCostBreakdownMultiplier(breakdown, resolvedChannelTimeMultiplier(resolved, input.PricingAt))
 	return breakdown, nil
 }
@@ -1134,6 +1173,7 @@ func (s *BillingService) calculateTokenCost(resolved *ResolvedPricing, input Cos
 // computeTokenBreakdown 是 token 计费的核心逻辑，由 calculateTokenCost 和 calculateCostInternal 共用。
 // applyLongCtx 控制是否检查长上下文定价（区间定价已自含上下文分层，不需要额外应用）。
 func (s *BillingService) computeTokenBreakdown(
+	model string,
 	pricing *ModelPricing, tokens UsageTokens,
 	rateMultiplier float64, serviceTier string,
 	applyLongCtx bool,
@@ -1150,7 +1190,7 @@ func (s *BillingService) computeTokenBreakdown(
 	cacheCreationMultiplier := 1.0
 	tierMultiplier := 1.0
 
-	if usePriorityServiceTierPricing(serviceTier, pricing) {
+	if usePriorityServiceTierPricing(serviceTier, pricing, model) {
 		if pricing.InputPricePerTokenPriority > 0 {
 			inputPrice = pricing.InputPricePerTokenPriority
 		}
@@ -1164,13 +1204,13 @@ func (s *BillingService) computeTokenBreakdown(
 			cacheCreationPrice = pricing.CacheCreationPricePerTokenPriority
 		}
 	} else {
-		tierMultiplier = serviceTierCostMultiplier(serviceTier)
+		tierMultiplier = serviceTierCostMultiplier(serviceTier, model)
 	}
 
 	longContextPricingEligible := applyLongCtx && s.shouldApplySessionLongContextPricing(tokens, pricing)
 	var baselineCost *CostBreakdown
 	if longContextPricingEligible {
-		baselineCost = s.computeTokenBreakdown(pricing, tokens, rateMultiplier, serviceTier, false)
+		baselineCost = s.computeTokenBreakdown(model, pricing, tokens, rateMultiplier, serviceTier, false)
 		inputPrice *= pricing.LongContextInputMultiplier
 		outputPrice *= pricing.LongContextOutputMultiplier
 		// 缓存读取本质上是输入侧的复用，应与 input 一同应用长上下文倍率；
@@ -1334,7 +1374,7 @@ func (s *BillingService) calculateCostInternalWithPolicy(
 		return nil, err
 	}
 
-	return s.computeTokenBreakdown(pricing, tokens, rateMultiplier, serviceTier, longContextBillingEnabled), nil
+	return s.computeTokenBreakdown(model, pricing, tokens, rateMultiplier, serviceTier, longContextBillingEnabled), nil
 }
 
 func (s *BillingService) applyModelSpecificPricingPolicy(model string, pricing *ModelPricing) *ModelPricing {

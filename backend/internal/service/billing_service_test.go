@@ -869,7 +869,7 @@ func TestComputeTokenBreakdown_GptImage2ImageEditIssue4386(t *testing.T) {
 		ImageOutputTokens: 439,
 	}
 
-	cost := svc.computeTokenBreakdown(pricing, tokens, 1.0, "", false)
+	cost := svc.computeTokenBreakdown("gpt-image-2", pricing, tokens, 1.0, "", false)
 
 	wantTextInput := float64(19) * 5e-6     // 0.000095
 	wantImageInput := float64(352) * 8e-6   // 0.002816
@@ -1346,14 +1346,17 @@ func TestCalculateCost_LargeTokenCount(t *testing.T) {
 }
 
 func TestServiceTierCostMultiplier(t *testing.T) {
-	require.InDelta(t, 2.0, serviceTierCostMultiplier("priority"), 1e-12)
-	require.InDelta(t, 2.0, serviceTierCostMultiplier(" Priority "), 1e-12)
-	require.InDelta(t, 0.5, serviceTierCostMultiplier("flex"), 1e-12)
-	require.InDelta(t, 1.0, serviceTierCostMultiplier(""), 1e-12)
-	require.InDelta(t, 1.0, serviceTierCostMultiplier("default"), 1e-12)
+	require.InDelta(t, 2.0, serviceTierCostMultiplier("priority", ""), 1e-12)
+	require.InDelta(t, 2.0, serviceTierCostMultiplier(" Priority ", "gpt-5.4"), 1e-12)
+	require.InDelta(t, 2.5, serviceTierCostMultiplier("priority", "gpt-5.6-sol"), 1e-12)
+	require.InDelta(t, 2.5, serviceTierCostMultiplier("priority", "gpt-5.6-luna"), 1e-12)
+	require.InDelta(t, 2.5, serviceTierCostMultiplier("priority", "gpt-5.5"), 1e-12)
+	require.InDelta(t, 0.5, serviceTierCostMultiplier("flex", "gpt-5.6-sol"), 1e-12)
+	require.InDelta(t, 1.0, serviceTierCostMultiplier("", "gpt-5.6-sol"), 1e-12)
+	require.InDelta(t, 1.0, serviceTierCostMultiplier("default", ""), 1e-12)
 }
 
-func TestCalculateCostWithServiceTier_OpenAIPriorityUsesPriorityPricing(t *testing.T) {
+func TestCalculateCostWithServiceTier_OpenAIPriorityUsesStandardTimesMultiplier(t *testing.T) {
 	svc := newTestBillingService()
 	tokens := UsageTokens{InputTokens: 100, OutputTokens: 50, CacheReadTokens: 20}
 
@@ -1367,6 +1370,34 @@ func TestCalculateCostWithServiceTier_OpenAIPriorityUsesPriorityPricing(t *testi
 	require.InDelta(t, baseCost.OutputCost*2, priorityCost.OutputCost, 1e-10)
 	require.InDelta(t, baseCost.CacheReadCost*2, priorityCost.CacheReadCost, 1e-10)
 	require.InDelta(t, baseCost.TotalCost*2, priorityCost.TotalCost, 1e-10)
+}
+
+func TestCalculateCostWithServiceTier_Gpt56FastIgnoresAPIPriorityUnitPrices(t *testing.T) {
+	svc := NewBillingService(&config.Config{}, &PricingService{
+		pricingData: map[string]*LiteLLMModelPricing{
+			"gpt-5.6-sol": {
+				InputCostPerToken:               5e-6,
+				InputCostPerTokenPriority:       8e-6, // API Fast 促销价，订阅号不计此档
+				OutputCostPerToken:              30e-6,
+				OutputCostPerTokenPriority:      40e-6,
+				CacheReadInputTokenCost:         0.5e-6,
+				CacheReadInputTokenCostPriority: 0.8e-6,
+			},
+		},
+	})
+	tokens := UsageTokens{InputTokens: 100, OutputTokens: 50, CacheReadTokens: 20}
+
+	baseCost, err := svc.CalculateCost("gpt-5.6-sol", tokens, 1.0)
+	require.NoError(t, err)
+
+	priorityCost, err := svc.CalculateCostWithServiceTier("gpt-5.6-sol", tokens, 1.0, "priority")
+	require.NoError(t, err)
+
+	require.InDelta(t, baseCost.InputCost*2.5, priorityCost.InputCost, 1e-10)
+	require.InDelta(t, baseCost.OutputCost*2.5, priorityCost.OutputCost, 1e-10)
+	require.InDelta(t, baseCost.CacheReadCost*2.5, priorityCost.CacheReadCost, 1e-10)
+	require.InDelta(t, baseCost.TotalCost*2.5, priorityCost.TotalCost, 1e-10)
+	require.Greater(t, math.Abs(priorityCost.InputCost-100*8e-6), 1e-12)
 }
 
 func TestCalculateCostWithServiceTier_FlexAppliesHalfMultiplier(t *testing.T) {
@@ -1714,7 +1745,7 @@ func TestComputeTokenBreakdown_ExplicitZeroImagePrice_NoFallback(t *testing.T) {
 		OutputTokens:      200,
 		ImageOutputTokens: 50,
 	}
-	bd := svc.computeTokenBreakdown(pricing, tokens, 1.0, "", false)
+	bd := svc.computeTokenBreakdown("claude-sonnet-4", pricing, tokens, 1.0, "", false)
 
 	// ImageOutputTokens should NOT fall back to outputPrice
 	require.Equal(t, 0.0, bd.ImageOutputCost)
@@ -1736,7 +1767,7 @@ func TestComputeTokenBreakdown_NonExplicitZeroImagePrice_FallsBackToOutput(t *te
 		OutputTokens:      200,
 		ImageOutputTokens: 50,
 	}
-	bd := svc.computeTokenBreakdown(pricing, tokens, 1.0, "", false)
+	bd := svc.computeTokenBreakdown("claude-sonnet-4", pricing, tokens, 1.0, "", false)
 
 	// Should fall back to outputPrice since not explicit
 	require.InDelta(t, 50*15e-6, bd.ImageOutputCost, 1e-12)
