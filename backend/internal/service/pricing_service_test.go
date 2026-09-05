@@ -96,7 +96,7 @@ const gpt6AstraCatalogJSON = `{
 	}
 }`
 
-func TestBillingServiceGPT6AstraUsesOfficialPricingAcrossTiersAndLongContext(t *testing.T) {
+func TestBillingServiceGPT6AstraUsesSubscriptionCreditPricingAcrossTiersAndLongContext(t *testing.T) {
 	svc := NewBillingService(&config.Config{}, newStubPricingServiceFromJSON(t, gpt6AstraCatalogJSON))
 	boundaryTokens := UsageTokens{InputTokens: 100_000, CacheCreationTokens: 100_000, CacheReadTokens: 72_000, OutputTokens: 10}
 	boundary, err := svc.CalculateCost("gpt-6-astra", boundaryTokens, 1)
@@ -114,7 +114,7 @@ func TestBillingServiceGPT6AstraUsesOfficialPricingAcrossTiersAndLongContext(t *
 		priceScale  float64
 	}{
 		{name: "standard", priceScale: 1},
-		{name: "fast", serviceTier: "priority", priceScale: 2},
+		{name: "fast", serviceTier: "priority", priceScale: 2.5},
 		{name: "flex", serviceTier: "flex", priceScale: 0.5},
 	}
 	for _, tier := range tiers {

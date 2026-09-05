@@ -182,7 +182,9 @@ ghcr.io/clarence12138/sub2api:latest
 - 账号金额/额度占比图、每 1% 花费、缩放和平移
 - 请求入口 `edge_name` / `entry_host` 全链路记录，与官方 `upstream_request_id` 并存
 - cyber_policy 完整请求/提示词落库，与 WebSocket 多路径标记、去重、失败切换兼容
-- GPT-5.5（含现有 Pro 定制）/5.6 Fast 按标准价 2.5 倍扣额度；保留显式渠道倍率优先级
+- GPT-5.5（含现有 Pro 定制）/5.6/GPT-6 Astra Fast/priority **默认按标准价 2.5 倍扣额度**；GPT-6 支持 `gpt-6`、`gpt-6-astra` 及 Astra 日期/版本后缀、供应商前缀。保留显式渠道 `FastMultiplier`（含 0）优先级，不使用目录 API priority 2 倍价再次计费
+- 普通档不提价，Flex 和 GPT-5.4 保持原规则；Ultrafast 保留上游独立 2 倍规则，不归入 Fast 2.5 倍
+- `free_openai_fast` 默认关闭；管理员显式开启时仅用户 ActualCost/扣额度按普通档，TotalCost 与上游档位仍保留 Fast 记录；`force_openai_fast` 默认关闭
 - 认证快照保留长上下文分组开关；旧快照版本淘汰回源
 
 ### v0.2.1 升级核对

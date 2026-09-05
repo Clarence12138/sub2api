@@ -118,8 +118,8 @@ type ModelPricing struct {
 }
 
 const (
-	// ChatGPT / Codex 订阅 Fast：GPT-5.6 / GPT-5.5 按标准价 2.5x 扣额度。
-	// 见 https://developers.openai.com/codex/speed ；不使用 API *_priority 单价。
+	// 本 fork 的 ChatGPT / Codex Fast：GPT-6 Astra / GPT-5.6 / GPT-5.5
+	// 按标准价 2.5x 扣额度，不使用 API *_priority 单价；Ultrafast 独立处理。
 	openAIChatGPTFastCreditMultiplier    = 2.5
 	defaultPriorityServiceTierMultiplier = 2.0
 )
@@ -132,7 +132,7 @@ func preferOpenAISubscriptionServiceTierBilling(model string) bool {
 	if strings.TrimSpace(model) == "" {
 		return false
 	}
-	if isOpenAIGPT56Model(model) {
+	if isOpenAIGPT56Model(model) || isOpenAIGPT6AstraModel(model) {
 		return true
 	}
 	if normalizeKnownOpenAICodexModel(model) != "" {
@@ -143,7 +143,7 @@ func preferOpenAISubscriptionServiceTierBilling(model string) bool {
 }
 
 func usesOpenAIChatGPTFastCreditMultiplier(model string) bool {
-	if isOpenAIGPT56Model(model) {
+	if isOpenAIGPT56Model(model) || isOpenAIGPT6AstraModel(model) {
 		return true
 	}
 	switch normalizeKnownOpenAICodexModel(model) {
