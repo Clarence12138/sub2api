@@ -70,7 +70,7 @@ PR 只用于冲突多的官方升级（见下文），或明确需要单独留�
 ./scripts/sync-upstream.sh main upstream/main
 
 # 合并到官方某个 tag
-UPSTREAM_REF=upstream/v0.1.170 ./scripts/sync-upstream.sh
+UPSTREAM_REF=v0.1.170 ./scripts/sync-upstream.sh
 ```
 
 脚本会：
@@ -98,7 +98,7 @@ git merge upstream/main
 ```bash
 git fetch upstream --tags
 git switch -c chore/upgrade-sub2api-v0.1.xxx main
-git merge upstream/main   # 或 upstream/v0.1.xxx
+git merge upstream/main   # 固定 Release 使用已获取的 v0.1.xxx tag 或解引用后的提交 SHA
 # 解冲突、本地验证
 git push -u origin HEAD
 # 开 PR：chore/upgrade-… → main，合并后再打 tag
@@ -156,7 +156,8 @@ git diff main...upstream/main            # 代码差异
 
 ```bash
 git tag v0.1.178-clarence.1
-git push origin main --tags
+git push origin main
+git push origin v0.1.178-clarence.1
 # 或只推 tag：
 # git push origin v0.1.178-clarence.1
 ```
@@ -176,7 +177,22 @@ ghcr.io/clarence12138/sub2api:latest
 - Ops 看板健康分阈值可配置
 - TTFT 诊断与配置阈值对齐（非写死常量）
 - 上游额度刷新邮件通知
-- 管理员批量重置订阅额度等二开能力
+- 管理员批量重置订阅额度，周/月窗口锚定操作时刻
+- OpenAI 7d 额度窗口快照、官方重置识别与分钟级抖动容忍；不记录/展示 5h 统计窗口
+- 账号金额/额度占比图、每 1% 花费、缩放和平移
+- 请求入口 `edge_name` / `entry_host` 全链路记录，与官方 `upstream_request_id` 并存
+- cyber_policy 完整请求/提示词落库，与 WebSocket 多路径标记、去重、失败切换兼容
+- GPT-5.5（含现有 Pro 定制）/5.6 Fast 按标准价 2.5 倍扣额度；保留显式渠道倍率优先级
+- 认证快照保留长上下文分组开关；旧快照版本淘汰回源
+
+### v0.2.1 升级核对
+
+- 官方固定基线：`578785ee7fb35030b094b69624efe25670a36f5f`。
+- 从 `0.1.185-clarence.1` merge；上游完整差异 353 个文件，与 fork 共同修改 44 个文件。
+- 手写用量 INSERT/SELECT 同时保留入口字段和上游请求 ID，参数表、扫描与批量路径同步。
+- 账号精简列表的编辑和统计入口先获取完整详情，不用精简 DTO 覆盖通知配置。
+- 保留已发布的 `192_add_usage_log_edge_ingress.sql`、`222_account_usage_windows.sql`、`223_account_usage_window_samples.sql`，不改名、不改 checksum。
+- 新增 Fast 分组开关默认关闭；数据库升级与重启幂等在隔离 PostgreSQL 演练，测试不连接生产或发送真实邮件。
 
 同步官方时若冲突，优先保留上述定制语义，再吸收上游修复/功能。
 

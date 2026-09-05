@@ -110,6 +110,12 @@ func TestLegacyAuthSnapshotOmittingLongContextFlagDisablesOfficialLadder(t *test
 	require.False(t, entry.Snapshot.Group.LongContextPricingEnabled)
 
 	svc := &APIKeyService{}
+	// 上游新增快照字段后版本已推进；真实旧缓存必须淘汰。
+	_, used, err := svc.applyAuthCacheEntry("sk-legacy", &entry)
+	require.NoError(t, err)
+	require.False(t, used)
+	// 用当前版本隔离复现“字段缺失变为 false”的历史风险，不绑定旧版本号。
+	entry.Snapshot.Version = apiKeyAuthSnapshotVersion
 	materialized, used, err := svc.applyAuthCacheEntry("sk-legacy", &entry)
 	require.NoError(t, err)
 	require.True(t, used)
